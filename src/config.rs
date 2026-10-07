@@ -191,9 +191,16 @@ impl Anchor {
 #[derive(Deserialize)]
 #[derive(Debug, Clone, Copy)]
 pub struct NamedMargin {
+    #[serde(default)]
     top: u32,
+
+    #[serde(default)]
     right: u32,
+
+    #[serde(default)]
     bottom: u32,
+
+    #[serde(default)]
     left: u32,
 }
 
