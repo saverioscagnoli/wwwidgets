@@ -1,21 +1,27 @@
 mod bridge;
 mod config;
+mod navigation;
 
 use gtk4::gdk;
 use gtk4::gdk::prelude::DisplayExt;
 use gtk4::gdk::prelude::MonitorExt;
 use gtk4::gio::prelude::ApplicationExt;
 use gtk4::gio::prelude::ApplicationExtManual;
+use gtk4::gio::prelude::ListModelExt;
 use gtk4::gio::prelude::ListModelExtManual;
 use gtk4::glib;
 use gtk4::glib::GString;
 use gtk4::glib::LogLevel;
 use gtk4::glib::LogWriterOutput;
+use gtk4::glib::object::CastNone;
+use gtk4::glib::object::ObjectExt;
 use gtk4::prelude::GtkApplicationExt;
+use gtk4::prelude::GtkWindowExt;
 use gtk4_layer_shell::LayerShell;
 
 use traccia::Colored;
 use traccia::debug;
+use traccia::error;
 use traccia::fatal;
 use traccia::info;
 
@@ -78,6 +84,7 @@ fn route_glib_logs() {
 
 fn monitors_for(display: &gdk::Display, selection: &Monitors) -> Vec<gdk::Monitor> {
     let monitors = display.monitors();
+
     let all = monitors.iter::<gdk::Monitor>().filter_map(Result::ok);
 
     match selection {
@@ -109,11 +116,31 @@ fn spawn_window(
 
     let webview = builder.build();
 
-    bridge::setup(&webview);
-
     let uri = widget.resolve_uri();
-    let width = widget.width.resolve(geometry.width());
-    let height = widget.height.resolve(geometry.height());
+
+    navigation::pin(&webview, &uri);
+
+    if widget.bridge_enabled(&uri) {
+        bridge::setup(&webview);
+    } else {
+        debug!("Bridge disabled for {uri}");
+    }
+
+    let width = match widget.width.resolve(geometry.width()) {
+        Ok(w) => w,
+        Err(e) => {
+            error!("Failed to resolve width: {e}",);
+            return;
+        }
+    };
+
+    let height = match widget.height.resolve(geometry.height()) {
+        Ok(h) => h,
+        Err(e) => {
+            error!("Failed to resolve height: {e}",);
+            return;
+        }
+    };
 
     info!(
         "Spawning widget: {} ({}x{}) on {}",
@@ -147,6 +174,14 @@ fn spawn_window(
     widget.apply_keyboard_mode(&window);
 
     widget.apply_visibility(&window);
+
+    let weak = window.downgrade();
+
+    monitor.connect_invalidate(move |_| {
+        if let Some(w) = weak.upgrade() {
+            w.destroy();
+        }
+    });
 }
 
 fn main() -> gtk4::glib::ExitCode {
@@ -216,6 +251,27 @@ fn main() -> gtk4::glib::ExitCode {
                 spawn_window(app, &first, widget, &monitor);
             }
         }
+
+        let hold = app.hold();
+        let app = app.clone();
+        let widgets = config.widgets.clone();
+
+        display
+            .monitors()
+            .connect_items_changed(move |list, position, _removed, added| {
+                let _hold = &hold;
+                for i in position..position + added {
+                    let Some(monitor) = list.item(i).and_downcast::<gdk::Monitor>() else {
+                        continue;
+                    };
+
+                    for widget in &widgets {
+                        if widget.wants(&monitor) {
+                            spawn_window(&app, &first, widget, &monitor);
+                        }
+                    }
+                }
+            });
     });
 
     // Don't let gtk try to parse cli args

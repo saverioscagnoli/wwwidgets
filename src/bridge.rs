@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -17,6 +18,20 @@ use webkit6::prelude::WebViewExt;
 const SHIM: &str = include_str!("../shim.js");
 
 type Processes = Rc<RefCell<HashMap<u32, gio::Subprocess>>>;
+type Generation = Rc<Cell<u64>>;
+
+#[derive(Clone)]
+struct Target {
+    webview: glib::WeakRef<webkit6::WebView>,
+    generation: Generation,
+    spawned_in: u64,
+}
+
+impl Target {
+    fn is_current(&self) -> bool {
+        self.generation.get() == self.spawned_in
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(tag = "cmd", rename_all = "lowercase")]
@@ -68,8 +83,12 @@ fn exec(argv: Vec<String>, ctx: jsc::Context, reply: webkit6::ScriptMessageReply
     });
 }
 
-fn emit(webview: &glib::WeakRef<webkit6::WebView>, id: u32, kind: &str, data: &str) {
-    let Some(webview) = webview.upgrade() else {
+fn emit(target: &Target, id: u32, kind: &str, data: &str) {
+    if !target.is_current() {
+        return;
+    }
+
+    let Some(webview) = target.webview.upgrade() else {
         return;
     };
 
@@ -77,12 +96,7 @@ fn emit(webview: &glib::WeakRef<webkit6::WebView>, id: u32, kind: &str, data: &s
     webview.evaluate_javascript(&script, None, None, gio::Cancellable::NONE, |_| {});
 }
 
-async fn read_lines(
-    stream: gio::InputStream,
-    id: u32,
-    kind: &'static str,
-    webview: glib::WeakRef<webkit6::WebView>,
-) {
+async fn read_lines(stream: gio::InputStream, id: u32, kind: &'static str, target: Target) {
     let stream = gio::DataInputStream::new(&stream);
 
     while let Ok(Some(line)) = stream.read_line_utf8_future(glib::Priority::DEFAULT).await {
@@ -90,16 +104,11 @@ async fn read_lines(
             continue;
         };
 
-        emit(&webview, id, kind, &literal);
+        emit(&target, id, kind, &literal);
     }
 }
 
-fn spawn(
-    id: u32,
-    argv: Vec<String>,
-    webview: glib::WeakRef<webkit6::WebView>,
-    processes: Processes,
-) -> Result<(), String> {
+fn spawn(id: u32, argv: Vec<String>, target: Target, processes: Processes) -> Result<(), String> {
     if argv.is_empty() {
         return Err("spawn: empty argv".into());
     };
@@ -112,11 +121,11 @@ fn spawn(
 
     let stderr_task = proc
         .stderr_pipe()
-        .map(|s| glib::spawn_future_local(read_lines(s, id, "stderr", webview.clone())));
+        .map(|s| glib::spawn_future_local(read_lines(s, id, "stderr", target.clone())));
 
     glib::spawn_future_local(async move {
         if let Some(stdout) = proc.stdout_pipe() {
-            read_lines(stdout, id, "stdout", webview.clone()).await;
+            read_lines(stdout, id, "stdout", target.clone()).await;
         }
 
         if let Some(task) = stderr_task {
@@ -124,6 +133,11 @@ fn spawn(
         }
 
         let _ = proc.wait_future().await;
+
+        if !target.is_current() {
+            return;
+        }
+
         processes.borrow_mut().remove(&id);
 
         let code = if proc.has_exited() {
@@ -132,7 +146,7 @@ fn spawn(
             -1
         };
 
-        emit(&webview, id, "exit", &code.to_string());
+        emit(&target, id, "exit", &code.to_string());
     });
 
     Ok(())
@@ -153,12 +167,16 @@ pub fn setup(webview: &webkit6::WebView) {
     ));
 
     let processes: Processes = Rc::default();
+    let generation: Generation = Rc::default();
 
     {
         let processes = Rc::clone(&processes);
+        let generation = Rc::clone(&generation);
 
         webview.connect_load_changed(move |_, event| {
             if event == webkit6::LoadEvent::Started {
+                generation.set(generation.get() + 1);
+
                 for (_, proc) in processes.borrow_mut().drain() {
                     proc.force_exit();
                 }
@@ -182,7 +200,13 @@ pub fn setup(webview: &webkit6::WebView) {
         match msg {
             Ok(Message::Exec { argv }) => exec(argv, ctx, reply.clone()),
             Ok(Message::Spawn { id, argv }) => {
-                match spawn(id, argv, weak.clone(), processes.clone()) {
+                let target = Target {
+                    webview: weak.clone(),
+                    generation: Rc::clone(&generation),
+                    spawned_in: generation.get(),
+                };
+
+                match spawn(id, argv, target, processes.clone()) {
                     Ok(()) => reply.return_value(&jsc::Value::new_undefined(&ctx)),
                     Err(e) => reply.return_error_message(&e),
                 }

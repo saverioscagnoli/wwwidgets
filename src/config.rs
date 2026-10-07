@@ -7,6 +7,7 @@ use std::sync::LazyLock;
 
 use gtk4::cairo;
 use gtk4::gdk;
+use gtk4::gdk::prelude::MonitorExt;
 use gtk4::gdk::prelude::SurfaceExt;
 use gtk4::gio;
 use gtk4::gio::prelude::FileExt;
@@ -78,14 +79,14 @@ impl Default for Size {
 }
 
 impl Size {
-    pub fn resolve(&self, total: i32) -> i32 {
+    pub fn resolve(&self, total: i32) -> Result<i32, String> {
         match self {
-            Self::Px(px) => *px as i32,
+            Self::Px(px) => Ok(*px as i32),
             Self::Percent(s) => s
                 .trim_end_matches('%')
                 .parse::<f64>()
                 .map(|p| (total as f64 * p / 100.0) as i32)
-                .unwrap_or(0),
+                .map_err(|e| e.to_string()),
         }
     }
 }
@@ -286,6 +287,9 @@ pub struct WidgetConfig {
 
     #[serde(default)]
     pub keyboard: KeyboardMode,
+
+    #[serde(default)]
+    pub bridge: Option<bool>,
 }
 
 impl WidgetConfig {
@@ -456,6 +460,21 @@ impl WidgetConfig {
             KeyboardMode::Exclusive => {
                 window.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::Exclusive)
             }
+        }
+    }
+
+    pub fn bridge_enabled(&self, uri: &str) -> bool {
+        self.bridge
+            .unwrap_or_else(|| glib::Uri::peek_scheme(uri).is_some_and(|s| s == "file"))
+    }
+
+    pub fn wants(&self, monitor: &gdk::Monitor) -> bool {
+        match &self.monitors {
+            Monitors::Preset(MonitorPreset::All) => true,
+            Monitors::Preset(MonitorPreset::Primary) => false,
+            Monitors::List(names) => monitor
+                .connector()
+                .is_some_and(|c| names.iter().any(|n| n == c.as_str())),
         }
     }
 }
