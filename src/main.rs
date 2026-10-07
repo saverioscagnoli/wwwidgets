@@ -1,20 +1,17 @@
+mod bridge;
 mod config;
 
 use gtk4::gdk;
 use gtk4::gdk::prelude::DisplayExt;
 use gtk4::gdk::prelude::MonitorExt;
-use gtk4::gio;
 use gtk4::gio::prelude::ApplicationExt;
 use gtk4::gio::prelude::ApplicationExtManual;
-use gtk4::gio::prelude::FileExt;
 use gtk4::gio::prelude::ListModelExtManual;
 use gtk4::glib;
 use gtk4::glib::GString;
 use gtk4::glib::LogLevel;
 use gtk4::glib::LogWriterOutput;
 use gtk4::prelude::GtkApplicationExt;
-use gtk4::prelude::GtkWindowExt;
-use gtk4_layer_shell::Layer;
 use gtk4_layer_shell::LayerShell;
 
 use traccia::Colored;
@@ -102,15 +99,25 @@ fn spawn_window(
     monitor: &gdk::Monitor,
 ) {
     let geometry = monitor.geometry();
-    let webview = webkit6::WebView::builder().related_view(webview).build();
+    let mut builder = webkit6::WebView::builder()
+        .related_view(webview)
+        .user_content_manager(&webkit6::UserContentManager::new());
 
-    let path = widget.resolve_path();
+    if let Some(settings) = webview.settings() {
+        builder = builder.settings(&settings);
+    }
+
+    let webview = builder.build();
+
+    bridge::setup(&webview);
+
+    let uri = widget.resolve_uri();
     let width = widget.width.resolve(geometry.width());
     let height = widget.height.resolve(geometry.height());
 
     info!(
         "Spawning widget: {} ({}x{}) on {}",
-        path.display(),
+        uri,
         width,
         height,
         monitor
@@ -118,7 +125,7 @@ fn spawn_window(
             .unwrap_or(GString::from("Unnamed monitor"))
     );
 
-    webview.load_uri(&gio::File::for_path(path).uri());
+    webview.load_uri(&uri);
 
     let window = gtk4::ApplicationWindow::builder()
         .application(app)
@@ -128,16 +135,18 @@ fn spawn_window(
         .build();
 
     window.init_layer_shell();
-    window.set_namespace(Some("wwwidgets"));
-
     window.set_monitor(Some(monitor));
 
+    widget.apply_namespace(&window);
+    widget.apply_transparency(&window, &webview);
+    widget.apply_click_through(&window);
     widget.apply_layer(&window);
     widget.apply_anchor(&window);
     widget.apply_margin(&window);
     widget.apply_exclusivity(&window);
+    widget.apply_keyboard_mode(&window);
 
-    window.present();
+    widget.apply_visibility(&window);
 }
 
 fn main() -> gtk4::glib::ExitCode {
@@ -148,7 +157,6 @@ fn main() -> gtk4::glib::ExitCode {
             } else {
                 traccia::LevelFilter::Info
             })
-            .with_module_filter("gdk", traccia::LevelFilter::Warn)
             .with_formatter(Formatter),
     );
 
@@ -175,6 +183,10 @@ fn main() -> gtk4::glib::ExitCode {
 
         let data_dir = glib::user_data_dir().join("wwwidgets");
         let cache_dir = glib::user_cache_dir().join("wwwidgets");
+
+        debug!("Resolved data dir: {}", data_dir.display());
+        debug!("Resolved cache dir: {}", cache_dir.display());
+
         let session = webkit6::NetworkSession::new(data_dir.to_str(), cache_dir.to_str());
 
         let mut pressure = webkit6::MemoryPressureSettings::new();
@@ -193,6 +205,11 @@ fn main() -> gtk4::glib::ExitCode {
             .network_session(&session)
             .web_context(&ctx)
             .build();
+
+        if let Some(settings) = first.settings() {
+            debug!("Devtools: {}", config.devtools);
+            settings.set_enable_developer_extras(config.devtools);
+        }
 
         for widget in &config.widgets {
             for monitor in monitors_for(&display, &widget.monitors) {
