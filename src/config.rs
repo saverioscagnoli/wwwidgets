@@ -259,7 +259,10 @@ pub struct WidgetConfig {
     #[serde(default = "WidgetConfig::default_transparent")]
     pub transparent: bool,
 
-    #[serde(rename = "kebab-case", default = "WidgetConfig::default_click_through")]
+    #[serde(
+        rename = "click-through",
+        default = "WidgetConfig::default_click_through"
+    )]
     pub click_through: bool,
 
     #[serde(default)]
