@@ -1,0 +1,42 @@
+{
+  "widgets": [
+    {
+      "path": "audio.html",
+      "monitors": "all",
+      "width": 1,
+      "height": 1,
+      "layer": "background",
+      "click-through": true,
+      "transparent": true
+    },
+    {
+      "path": "bar.html",
+      "monitors": "all",
+      "width": "100%",
+      "height": 36,
+      "anchor": "top",
+      "exclusive": true
+    },
+    {
+      "path": "control.html",
+      "monitors": "all",
+      "width": 320,
+      "height": 260,
+      "anchor": "top-right",
+      "margin": { "top": 8, "right": 8 },
+      "layer": "overlay",
+      "keyboard": "on-demand"
+    },
+    {
+      "path": "osd.html",
+      "monitors": "all",
+      "width": 260,
+      "height": 64,
+      "anchor": "bottom",
+      "margin": { "bottom": 80 },
+      "layer": "overlay",
+      "click-through": true,
+      "transparent": true
+    }
+  ]
+}

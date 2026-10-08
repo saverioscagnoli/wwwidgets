@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>monitors</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 16px;
+      height: 100vh;
+      font: 13px monospace;
+      color: #cdd6f4;
+      background: #1e1e2e;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    #layout {
+      position: relative;
+      flex: 1;
+      background: #181825;
+      border-radius: 8px;
+    }
+
+    .screen {
+      position: absolute;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #313244;
+      border: 1px solid #45475a;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+
+    .screen.self {
+      background: #89b4fa;
+      color: #1e1e2e;
+    }
+
+    dl {
+      margin: 0;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 2px 12px;
+    }
+
+    dt {
+      color: #7f849c;
+    }
+
+    dd {
+      margin: 0;
+    }
+  </style>
+</head>
+<body>
+  <h2 id="title"></h2>
+  <dl id="info"></dl>
+  <div id="layout"></div>
+
+  <script type="module">
+    const self = await wwwidgets.monitors.get();
+    const all = await wwwidgets.monitors.list();
+
+    document.getElementById("title").textContent = `this is ${self.connector}`;
+
+    const rows = {
+      model: [self.manufacturer, self.model].filter(Boolean).join(" ") || "unknown",
+      resolution: `${self.width}x${self.height} @ ${self.refreshRate.toFixed(2)} Hz`,
+      position: `${self.x}, ${self.y}`,
+      scale: self.scale,
+      size: `${self.widthMm}x${self.heightMm} mm`,
+    };
+
+    const info = document.getElementById("info");
+
+    for (const [key, value] of Object.entries(rows)) {
+      const dt = document.createElement("dt");
+      const dd = document.createElement("dd");
+      dt.textContent = key;
+      dd.textContent = value;
+      info.append(dt, dd);
+    }
+
+    const layout = document.getElementById("layout");
+    const minX = Math.min(...all.map((m) => m.x));
+    const minY = Math.min(...all.map((m) => m.y));
+    const maxX = Math.max(...all.map((m) => m.x + m.width));
+    const maxY = Math.max(...all.map((m) => m.y + m.height));
+
+    const draw = () => {
+      layout.replaceChildren();
+
+      const pad = 8;
+      const box = layout.getBoundingClientRect();
+      const ratio = Math.min(
+        (box.width - pad * 2) / (maxX - minX),
+        (box.height - pad * 2) / (maxY - minY),
+      );
+
+      for (const m of all) {
+        const el = document.createElement("div");
+        el.className = "screen";
+        el.classList.toggle("self", m.connector === self.connector);
+        el.textContent = m.connector;
+        el.style.left = `${pad + (m.x - minX) * ratio}px`;
+        el.style.top = `${pad + (m.y - minY) * ratio}px`;
+        el.style.width = `${m.width * ratio}px`;
+        el.style.height = `${m.height * ratio}px`;
+        layout.append(el);
+      }
+    };
+
+    draw();
+    window.addEventListener("resize", draw);
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") wwwidgets.window.hide();
+    });
+  </script>
+</body>
+</html>

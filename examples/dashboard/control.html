@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <title>control</title>
+  <link rel="stylesheet" href="theme.css">
+  <script src="theme.js"></script>
+  <style>
+    body {
+      height: 100vh;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      border: 1px solid var(--surface);
+      border-radius: 10px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .row > span {
+      width: 64px;
+      color: var(--dim);
+    }
+
+    input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>control center</strong>
+    <button id="close">x</button>
+  </header>
+
+  <div class="row">
+    <span>volume</span>
+    <input id="slider" type="range" min="0" max="100">
+    <button id="mute">mute</button>
+  </div>
+
+  <div class="row">
+    <span>dnd</span>
+    <button id="dnd">off</button>
+  </div>
+
+  <div class="row">
+    <span>theme</span>
+    <button id="dark">dark</button>
+    <button id="light">light</button>
+  </div>
+
+  <script type="module">
+    const $ = (id) => document.getElementById(id);
+    const sink = "@DEFAULT_AUDIO_SINK@";
+    let dnd = false;
+    let muted = false;
+    let dragging = false;
+    let target = null;
+    let applying = false;
+
+    wwwidgets.window.hide();
+
+    wwwidgets.state.onChange("control.open", (open) => {
+      open ? wwwidgets.window.show() : wwwidgets.window.hide();
+    });
+
+    wwwidgets.state.onChange("audio", (audio) => {
+      muted = audio.muted;
+      if (!dragging) $("slider").value = audio.volume;
+      $("mute").classList.toggle("on", muted);
+    });
+
+    wwwidgets.state.onChange("ui.dnd", (on) => {
+      dnd = on;
+      $("dnd").textContent = on ? "on" : "off";
+      $("dnd").classList.toggle("on", on);
+    });
+
+    wwwidgets.state.onChange("ui.theme", (theme) => {
+      $("dark").classList.toggle("on", theme === "dark");
+      $("light").classList.toggle("on", theme === "light");
+    });
+
+    const apply = async () => {
+      if (applying) return;
+      applying = true;
+
+      while (target !== null) {
+        const v = target;
+        target = null;
+        await wwwidgets.exec(["wpctl", "set-volume", sink, `${v / 100}`]);
+      }
+
+      applying = false;
+    };
+
+    $("slider").onpointerdown = () => (dragging = true);
+    window.addEventListener("pointerup", () => (dragging = false));
+
+    $("slider").oninput = () => {
+      target = Number($("slider").value);
+      wwwidgets.state.set("audio", { volume: target, muted });
+      apply();
+    };
+
+    $("mute").onclick = () => wwwidgets.exec(["wpctl", "set-mute", sink, "toggle"]);
+    $("dnd").onclick = () => wwwidgets.state.set("ui.dnd", !dnd);
+    $("dark").onclick = () => wwwidgets.state.set("ui.theme", "dark");
+    $("light").onclick = () => wwwidgets.state.set("ui.theme", "light");
+    $("close").onclick = () => wwwidgets.state.set("control.open", false);
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") wwwidgets.state.set("control.open", false);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+:root,
+:root[data-theme="dark"] {
+  --bg: #1e1e2e;
+  --surface: #313244;
+  --fg: #cdd6f4;
+  --dim: #7f849c;
+  --accent: #89b4fa;
+}
+
+:root[data-theme="light"] {
+  --bg: #eff1f5;
+  --surface: #ccd0da;
+  --fg: #4c4f69;
+  --dim: #8c8fa1;
+  --accent: #1e66f5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 13px monospace;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+button.on {
+  background: var(--accent);
+  color: var(--bg);
+}

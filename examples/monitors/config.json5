@@ -1,0 +1,13 @@
+{
+  "widgets": [
+    {
+      "path": "index.html",
+      "monitors": "all",
+      "width": 420,
+      "height": 300,
+      "anchor": "center",
+      "layer": "overlay",
+      "keyboard": "on-demand"
+    }
+  ]
+}

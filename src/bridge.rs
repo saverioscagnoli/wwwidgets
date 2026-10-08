@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::rc::Rc;
 
+use gtk4::gdk;
+use gtk4::gdk::prelude::MonitorExt;
 use gtk4::gio;
 use gtk4::gio::prelude::DataInputStreamExtManual;
 use gtk4::glib;
@@ -13,6 +15,7 @@ use gtk4::prelude::GtkWindowExt;
 use gtk4::prelude::WidgetExt;
 
 use serde::Deserialize;
+use serde::Serialize;
 
 use traccia::debug;
 use traccia::error;
@@ -27,6 +30,7 @@ use crate::config::KeyboardMode;
 use crate::config::Layer;
 use crate::config::Margin;
 use crate::ext::LayerWindowExt;
+use crate::util;
 
 const SHIM: &str = include_str!("../shim.js");
 
@@ -43,6 +47,43 @@ struct Target {
 impl Target {
     fn is_current(&self) -> bool {
         self.generation.get() == self.spawned_in
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MonitorInfo {
+    connector: Option<String>,
+    description: Option<String>,
+    manufacturer: Option<String>,
+    model: Option<String>,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    scale: f64,
+    refresh_rate: f64,
+    width_mm: i32,
+    height_mm: i32,
+}
+
+impl From<&gdk::Monitor> for MonitorInfo {
+    fn from(m: &gdk::Monitor) -> Self {
+        let g = m.geometry();
+        Self {
+            connector: m.connector().map(Into::into),
+            description: m.description().map(Into::into),
+            manufacturer: m.manufacturer().map(Into::into),
+            model: m.model().map(Into::into),
+            x: g.x(),
+            y: g.y(),
+            width: g.width(),
+            height: g.height(),
+            scale: m.scale(),
+            refresh_rate: m.refresh_rate() as f64 / 1000.0,
+            width_mm: m.width_mm(),
+            height_mm: m.height_mm(),
+        }
     }
 }
 
@@ -76,6 +117,8 @@ enum Message {
     Kill { id: u32 },
     GetState { name: String },
     SetState { name: String, value: String },
+    GetMonitor { name: Option<String> },
+    ListMonitors,
     #[serde(untagged)]
     Window(WindowMessage),
 }
@@ -139,7 +182,7 @@ async fn read_lines(stream: gio::InputStream, id: u32, kind: &'static str, targe
     let stream = gio::DataInputStream::new(&stream);
 
     while let Ok(Some(line)) = stream.read_line_utf8_future(glib::Priority::DEFAULT).await {
-        let Ok(literal) = json5::to_string(&line.to_string()) else {
+        let Ok(literal) = serde_json::to_string(&line.to_string()) else {
             continue;
         };
 
@@ -203,7 +246,7 @@ fn kill_all(processes: &Processes) {
     }
 }
 
-pub fn setup(webview: &webkit6::WebView, shared: Rc<Shared>) {
+pub fn setup(webview: &webkit6::WebView, shared: Rc<Shared>, monitor: gdk::Monitor) {
     let Some(ucm) = webview.user_content_manager() else {
         error!("Webview has no user content manager");
         return;
@@ -253,7 +296,7 @@ pub fn setup(webview: &webkit6::WebView, shared: Rc<Shared>) {
         let msg = value
             .to_json(0)
             .ok_or_else(|| "message is not serializable".to_string())
-            .and_then(|json| json5::from_str::<Message>(&json).map_err(|e| e.to_string()));
+            .and_then(|json| serde_json::from_str::<Message>(&json).map_err(|e| e.to_string()));
 
         match msg {
             Ok(Message::Exec { argv }) => exec(argv, ctx, reply.clone()),
@@ -287,7 +330,7 @@ pub fn setup(webview: &webkit6::WebView, shared: Rc<Shared>) {
                 reply.return_value(&state);
             }
             Ok(Message::SetState { name, value }) => {
-                if json5::from_str::<serde::de::IgnoredAny>(&value).is_err() {
+                if serde_json::from_str::<serde::de::IgnoredAny>(&value).is_err() {
                     reply.return_error_message("setstate: value is not valid JSON");
                     return true;
                 }
@@ -297,7 +340,7 @@ pub fn setup(webview: &webkit6::WebView, shared: Rc<Shared>) {
                     return true;
                 }
 
-                let Ok(key) = json5::to_string(&name) else {
+                let Ok(key) = serde_json::to_string(&name) else {
                     reply.return_error_message("setstate: invalid name");
                     return true;
                 };
@@ -319,6 +362,27 @@ pub fn setup(webview: &webkit6::WebView, shared: Rc<Shared>) {
                 }
 
                 reply.return_value(&jsc::Value::new_undefined(&ctx));
+            }
+            Ok(Message::GetMonitor { name: None }) => {
+                util::reply_json(&ctx, reply, &MonitorInfo::from(&monitor));
+            }
+            Ok(Message::GetMonitor { name: Some(name) }) => {
+                if let Some(monitor) = util::list_monitors()
+                    .into_iter()
+                    .find(|m| m.connector().is_some_and(|c| c == name))
+                {
+                    util::reply_json(&ctx, reply, &MonitorInfo::from(&monitor));
+                } else {
+                    reply.return_error_message(&format!("failed to get monitor: {name}"));
+                }
+            }
+            Ok(Message::ListMonitors) => {
+                let monitors = util::list_monitors()
+                    .iter()
+                    .map(MonitorInfo::from)
+                    .collect::<Vec<_>>();
+
+                util::reply_json(&ctx, reply, &monitors);
             }
             Ok(Message::Window(wmsg)) => {
                 let Some(window) = weak

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <title>osd</title>
+  <link rel="stylesheet" href="theme.css">
+  <script src="theme.js"></script>
+  <style>
+    body {
+      background: transparent;
+      height: 100vh;
+      padding: 4px;
+    }
+
+    .card {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px;
+      background: var(--bg);
+      border-radius: 12px;
+    }
+
+    .track {
+      flex: 1;
+      height: 6px;
+      background: var(--surface);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    #fill {
+      height: 100%;
+      background: var(--accent);
+    }
+
+    #fill.muted {
+      background: var(--dim);
+    }
+
+    #label {
+      width: 48px;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span>vol</span>
+    <div class="track"><div id="fill"></div></div>
+    <span id="label"></span>
+  </div>
+
+  <script type="module">
+    const fill = document.getElementById("fill");
+    const label = document.getElementById("label");
+    let dnd = false;
+    let last = null;
+    let timer;
+
+    wwwidgets.window.hide();
+
+    wwwidgets.state.onChange("ui.dnd", (on) => {
+      dnd = on;
+    });
+
+    wwwidgets.state.onChange("audio", (audio) => {
+      const changed = last && (last.volume !== audio.volume || last.muted !== audio.muted);
+      last = audio;
+
+      fill.style.width = `${Math.min(audio.volume, 100)}%`;
+      fill.classList.toggle("muted", audio.muted);
+      label.textContent = audio.muted ? "muted" : `${audio.volume}%`;
+
+      if (!changed || dnd) return;
+
+      wwwidgets.window.show();
+      clearTimeout(timer);
+      timer = setTimeout(() => wwwidgets.window.hide(), 1500);
+    });
+  </script>
+</body>
+</html>

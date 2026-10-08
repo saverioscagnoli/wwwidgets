@@ -139,7 +139,7 @@ fn spawn_window(
 
     if widget.bridge_enabled(&uri) {
         shared.views.borrow_mut().push(webview.downgrade());
-        bridge::setup(&webview, shared);
+        bridge::setup(&webview, shared, monitor.clone());
     } else {
         debug!("Bridge disabled for {uri}");
     }
@@ -298,7 +298,14 @@ fn main() -> gtk4::glib::ExitCode {
 
         for widget in &config.widgets {
             for monitor in monitors_for(&display, &widget.monitors) {
-                spawn_window(app, &first, Rc::clone(&shared), &config.dir, widget, &monitor);
+                spawn_window(
+                    app,
+                    &first,
+                    Rc::clone(&shared),
+                    &config.dir,
+                    widget,
+                    &monitor,
+                );
             }
         }
 

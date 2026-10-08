@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <title>bar</title>
+  <link rel="stylesheet" href="theme.css">
+  <script src="theme.js"></script>
+  <style>
+    body {
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 8px;
+    }
+
+    #clock {
+      margin-right: auto;
+    }
+
+    #dnd {
+      color: var(--dim);
+    }
+
+    #dnd[hidden] {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <span id="clock"></span>
+  <span id="dnd" hidden>dnd</span>
+  <button id="volume">vol ?</button>
+  <button id="menu">menu</button>
+
+  <script type="module">
+    const clock = document.getElementById("clock");
+    const dnd = document.getElementById("dnd");
+    const volume = document.getElementById("volume");
+    const menu = document.getElementById("menu");
+    const sink = "@DEFAULT_AUDIO_SINK@";
+    let open = false;
+
+    const tick = () => {
+      clock.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    };
+
+    tick();
+    setInterval(tick, 1000);
+
+    wwwidgets.state.onChange("audio", ({ volume: v, muted }) => {
+      volume.textContent = muted ? "muted" : `vol ${v}%`;
+    });
+
+    wwwidgets.state.onChange("ui.dnd", (on) => {
+      dnd.hidden = !on;
+    });
+
+    wwwidgets.state.onChange("control.open", (v) => {
+      open = v;
+      menu.classList.toggle("on", v);
+    });
+
+    volume.onclick = () => wwwidgets.exec(["wpctl", "set-mute", sink, "toggle"]);
+
+    volume.onwheel = (e) => {
+      const step = e.deltaY < 0 ? "5%+" : "5%-";
+      wwwidgets.exec(["wpctl", "set-volume", "-l", "1.0", sink, step]);
+    };
+
+    menu.onclick = () => wwwidgets.state.set("control.open", !open);
+  </script>
+</body>
+</html>
