@@ -31,6 +31,7 @@
       isVisible:() => post({ cmd: "isvisible"}),
       hide: () => post({ cmd: "hide" }),
       show: () => post({ cmd: "show" }),
+      size: () => post({ cmd: "size" }),
       setSize: (w, h) => post({ cmd: "setsize", argv: [w, h] }),
       setWidth: w => post({ cmd: "setwidth", argv: w }),
       setHeight: h => post({ cmd: "setheight", argv: h }),

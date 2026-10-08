@@ -1,6 +1,8 @@
 mod bridge;
 mod config;
+mod ext;
 mod navigation;
+mod util;
 
 use gtk4::gdk;
 use gtk4::gdk::prelude::DisplayExt;
@@ -31,6 +33,7 @@ use crate::config::Config;
 use crate::config::MonitorPreset;
 use crate::config::Monitors;
 use crate::config::WidgetConfig;
+use crate::ext::LayerWindowExt;
 
 const APP_ID: &str = "dev.svscagn.wwwidgets";
 
@@ -89,7 +92,6 @@ fn monitors_for(display: &gdk::Display, selection: &Monitors) -> Vec<gdk::Monito
 
     match selection {
         Monitors::Preset(MonitorPreset::All) => all.collect(),
-        Monitors::Preset(MonitorPreset::Primary) => all.take(1).collect(),
         Monitors::List(names) => all
             .filter(|m| {
                 m.connector()
@@ -164,16 +166,16 @@ fn spawn_window(
     window.init_layer_shell();
     window.set_monitor(Some(monitor));
 
-    widget.apply_namespace(&window);
-    widget.apply_transparency(&window, &webview);
-    widget.apply_click_through(&window);
-    widget.apply_layer(&window);
-    widget.apply_anchor(&window);
-    widget.apply_margin(&window);
-    widget.apply_exclusivity(&window);
-    widget.apply_keyboard_mode(&window);
+    window.apply_namespace(&widget.namespace);
+    window.apply_transparency(widget.transparent, &webview);
+    window.apply_click_through(widget.click_through);
+    window.apply_layer(widget.layer);
+    window.apply_anchor(&widget.anchor);
+    window.apply_margin(widget.margin);
+    window.apply_exclusivity(widget.exclusive);
+    window.apply_keyboard_mode(widget.keyboard);
 
-    widget.apply_visibility(&window);
+    window.apply_visibility(widget.visible);
 
     let weak = window.downgrade();
 
