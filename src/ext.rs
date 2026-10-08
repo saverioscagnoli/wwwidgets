@@ -7,9 +7,11 @@ use gtk4::glib::object::IsA;
 use gtk4::prelude::GtkWindowExt;
 use gtk4::prelude::NativeExt;
 use gtk4::prelude::WidgetExt;
+
 use gtk4_layer_shell::Edge;
 use gtk4_layer_shell::KeyboardMode as GtkKeyboardMode;
 use gtk4_layer_shell::LayerShell;
+
 use webkit6::prelude::WebViewExt;
 
 use crate::config::Anchor;

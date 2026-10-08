@@ -11,6 +11,7 @@ use gtk4::glib::object::CastNone;
 use gtk4::glib::object::ObjectExt;
 use gtk4::prelude::GtkWindowExt;
 use gtk4::prelude::WidgetExt;
+
 use serde::Deserialize;
 
 use traccia::debug;

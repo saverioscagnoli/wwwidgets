@@ -19,6 +19,7 @@ use gtk4::glib::object::CastNone;
 use gtk4::glib::object::ObjectExt;
 use gtk4::prelude::GtkApplicationExt;
 use gtk4::prelude::GtkWindowExt;
+
 use gtk4_layer_shell::LayerShell;
 
 use traccia::Colored;

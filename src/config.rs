@@ -11,7 +11,9 @@ use gtk4::gio::prelude::FileExt;
 use gtk4::glib;
 
 use gtk4_layer_shell::Edge;
+
 use serde::Deserialize;
+
 use traccia::debug;
 use traccia::info;
 
