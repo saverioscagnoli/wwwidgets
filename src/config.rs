@@ -93,13 +93,13 @@ pub enum Layer {
     Overlay,
 }
 
-impl Layer {
-    pub fn to_gtk(&self) -> gtk4_layer_shell::Layer {
-        match self {
-            Self::Background => gtk4_layer_shell::Layer::Background,
-            Self::Bottom => gtk4_layer_shell::Layer::Bottom,
-            Self::Top => gtk4_layer_shell::Layer::Top,
-            Self::Overlay => gtk4_layer_shell::Layer::Overlay,
+impl From<Layer> for gtk4_layer_shell::Layer {
+    fn from(layer: Layer) -> Self {
+        match layer {
+            Layer::Background => Self::Background,
+            Layer::Bottom => Self::Bottom,
+            Layer::Overlay => Self::Overlay,
+            Layer::Top => Self::Top,
         }
     }
 }
@@ -114,13 +114,13 @@ pub enum AnchorPreset {
     Right,
 }
 
-impl AnchorPreset {
-    pub fn to_gtk(&self) -> Edge {
-        match self {
-            Self::Top => Edge::Top,
-            Self::Bottom => Edge::Bottom,
-            Self::Left => Edge::Left,
-            Self::Right => Edge::Right,
+impl From<&AnchorPreset> for Edge {
+    fn from(p: &AnchorPreset) -> Self {
+        match p {
+            AnchorPreset::Top => Self::Top,
+            AnchorPreset::Bottom => Self::Bottom,
+            AnchorPreset::Left => Self::Left,
+            AnchorPreset::Right => Self::Right,
         }
     }
 }
@@ -173,7 +173,7 @@ impl Default for Anchor {
 impl Anchor {
     pub fn edges(&self) -> Vec<Edge> {
         match self {
-            Self::Presets(presets) => presets.iter().map(AnchorPreset::to_gtk).collect(),
+            Self::Presets(presets) => presets.iter().map(Edge::from).collect(),
             Self::Shorthand(shorthand) => shorthand.edges().to_vec(),
         }
     }

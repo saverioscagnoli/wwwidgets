@@ -77,7 +77,7 @@ pub trait LayerWindowExt: IsA<gtk4::Window> {
     }
 
     fn apply_layer(&self, layer: Layer) {
-        self.set_layer(layer.to_gtk());
+        self.set_layer(layer.into());
     }
 
     fn apply_anchor(&self, anchor: &Anchor) {
