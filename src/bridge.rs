@@ -30,6 +30,7 @@ use crate::config::KeyboardMode;
 use crate::config::Layer;
 use crate::config::Margin;
 use crate::ext::LayerWindowExt;
+use crate::ext::Rect;
 use crate::util;
 
 const SHIM: &str = include_str!("../shim.js");
@@ -106,6 +107,7 @@ enum WindowMessage {
     SetAnchor { argv: Anchor },
     SetLayer { argv: Layer },
     SetExclusive { argv: Exclusivity },
+    SetInputRegion { argv: Option<Vec<Rect>> },
 }
 
 #[rustfmt::skip]
@@ -330,38 +332,10 @@ pub fn setup(webview: &webkit6::WebView, shared: Rc<Shared>, monitor: gdk::Monit
                 reply.return_value(&state);
             }
             Ok(Message::SetState { name, value }) => {
-                if serde_json::from_str::<serde::de::IgnoredAny>(&value).is_err() {
-                    reply.return_error_message("setstate: value is not valid JSON");
-                    return true;
+                match shared.set_state(name, value, weak.upgrade().as_ref()) {
+                    Ok(()) => reply.return_value(&jsc::Value::new_undefined(&ctx)),
+                    Err(e) => reply.return_error_message(&format!("setstate: {e}")),
                 }
-
-                if shared.state.borrow().get(&name) == Some(&value) {
-                    reply.return_value(&jsc::Value::new_undefined(&ctx));
-                    return true;
-                }
-
-                let Ok(key) = serde_json::to_string(&name) else {
-                    reply.return_error_message("setstate: invalid name");
-                    return true;
-                };
-
-                let script = format!("window.__wwwidgets_state?.({key}, {value})");
-                let sender = weak.upgrade();
-
-                shared.state.borrow_mut().insert(name, value);
-
-                let targets = {
-                    let mut views = shared.views.borrow_mut();
-
-                    views.retain(|w| w.upgrade().is_some());
-                    views.iter().filter_map(|w| w.upgrade()).collect::<Vec<_>>()
-                };
-
-                for view in targets.iter().filter(|v| Some(*v) != sender.as_ref()) {
-                    view.evaluate_javascript(&script, None, None, gio::Cancellable::NONE, |_| {});
-                }
-
-                reply.return_value(&jsc::Value::new_undefined(&ctx));
             }
             Ok(Message::GetMonitor { name: None }) => {
                 util::reply_json(&ctx, reply, &MonitorInfo::from(&monitor));
@@ -443,9 +417,12 @@ pub fn setup(webview: &webkit6::WebView, shared: Rc<Shared>, monitor: gdk::Monit
                         window.apply_layer(argv);
                         reply.return_value(&jsc::Value::new_undefined(&ctx));
                     }
-
                     WindowMessage::SetExclusive { argv } => {
                         window.apply_exclusivity(argv);
+                        reply.return_value(&jsc::Value::new_undefined(&ctx));
+                    }
+                    WindowMessage::SetInputRegion { argv } => {
+                        window.apply_input_region(argv.as_deref());
                         reply.return_value(&jsc::Value::new_undefined(&ctx));
                     }
                 }

@@ -881,6 +881,7 @@ dependencies = [
 name = "wwwidgets"
 version = "0.1.0"
 dependencies = [
+ "gio",
  "gtk4",
  "gtk4-layer-shell",
  "json5",

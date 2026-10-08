@@ -47,6 +47,36 @@
       setAnchor: (a) => post({ cmd: "setanchor", argv: a }),
       setLayer: (l) => post({ cmd: "setlayer", argv: l }),
       setExclusive: (e) => post({ cmd: "setexclusive", argv: e }),
+      setInputRegion: (rects) => post({ cmd: "setinputregion", argv: rects }),
+      inputRegionFrom: (selector) => {
+        const update = () => {
+          let rects = [...document.querySelectorAll(selector)].map((el) => {
+            let r = el.getBoundingClientRect();
+
+            return {
+              x: Math.floor(r.left),
+              y: Math.floor(r.top),
+              width: Math.ceil(r.width),
+              height: Math.ceil(r.height),
+            };
+          });
+
+          post({ cmd: "setinputregion", argv: rects });
+        };
+
+        let resize = new ResizeObserver(update);
+        let mutate = new MutationObserver(() => {
+          resize.disconnect();
+          document.querySelectorAll(selector).forEach((el) => resize.observe(el));
+          update();
+        });
+
+        mutate.observe(document.body, { childList: true, subtree: true, attributes: true });
+        document.querySelectorAll(selector).forEach((el) => resize.observe(el));
+        update();
+
+        return () => { resize.disconnect(); mutate.disconnect(); };
+      },
     },
     state: {
       get: (name) => post({ cmd: "getstate", name }),
@@ -65,8 +95,8 @@
       },
     },
     monitors: {
-      get: name => post({ cmd: "getmonitor", name }),
-      list: () => post({ cmd: "listmonitors" })
-    }
+      get: (name) => post({ cmd: "getmonitor", name }),
+      list: () => post({ cmd: "listmonitors" }),
+    },
   };
 })();

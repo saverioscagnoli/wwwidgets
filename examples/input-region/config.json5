@@ -1,0 +1,14 @@
+{
+  "widgets": [
+    {
+      "path": "index.html",
+      "monitors": "all",
+      "width": 480,
+      "height": 320,
+      "anchor": "bottom",
+      "margin": { "bottom": 16 },
+      "layer": "top",
+      "transparent": true
+    }
+  ]
+}

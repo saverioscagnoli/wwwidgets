@@ -6,6 +6,7 @@ mod util;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::Path;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -13,6 +14,8 @@ use std::rc::Rc;
 use gtk4::gdk;
 use gtk4::gdk::prelude::DisplayExt;
 use gtk4::gdk::prelude::MonitorExt;
+use gtk4::gio;
+use gtk4::gio::prelude::ApplicationCommandLineExt;
 use gtk4::gio::prelude::ApplicationExt;
 use gtk4::gio::prelude::ApplicationExtManual;
 use gtk4::gio::prelude::ListModelExt;
@@ -48,6 +51,41 @@ const APP_ID: &str = "dev.svscagn.wwwidgets";
 pub struct Shared {
     pub state: RefCell<HashMap<String, String>>,
     pub views: RefCell<Vec<glib::WeakRef<webkit6::WebView>>>,
+}
+
+impl Shared {
+    pub fn set_state(
+        &self,
+        name: String,
+        value: String,
+        sender: Option<&webkit6::WebView>,
+    ) -> Result<(), String> {
+        if serde_json::from_str::<serde::de::IgnoredAny>(&value).is_err() {
+            return Err("value is not valid JSON".into());
+        }
+
+        if self.state.borrow().get(&name) == Some(&value) {
+            return Ok(());
+        }
+
+        let key = serde_json::to_string(&name).map_err(|e| e.to_string())?;
+        let script = format!("window.__wwwidgets_state?.({key}, {value})");
+
+        self.state.borrow_mut().insert(name, value);
+
+        let targets = {
+            let mut views = self.views.borrow_mut();
+
+            views.retain(|w| w.upgrade().is_some());
+            views.iter().filter_map(|w| w.upgrade()).collect::<Vec<_>>()
+        };
+
+        for view in targets.iter().filter(|v| Some(*v) != sender) {
+            view.evaluate_javascript(&script, None, None, gio::Cancellable::NONE, |_| {});
+        }
+
+        Ok(())
+    }
 }
 
 struct Formatter;
@@ -202,29 +240,123 @@ fn spawn_window(
     });
 }
 
-struct Args {
-    config: Option<PathBuf>,
+enum Command {
+    Run { config: Option<PathBuf> },
+    Get { name: Option<String> },
+    Set { name: String, value: String },
+    Quit,
 }
 
-impl Args {
-    pub fn parse() -> Result<Self, lexopt::Error> {
+impl Command {
+    pub fn parse(args: Vec<OsString>) -> Result<Self, lexopt::Error> {
         use lexopt::prelude::*;
 
+        let mut parser = lexopt::Parser::from_args(args.into_iter().skip(1));
         let mut config = None;
-        let mut parser = lexopt::Parser::from_env();
 
         while let Some(arg) = parser.next()? {
             match arg {
                 Short('c') | Long("config") => {
                     config = Some(parser.value()?.parse()?);
                 }
+                Value(cmd) => {
+                    let cmd = cmd.string()?;
+                    let rest = parser
+                        .raw_args()?
+                        .map(|a| a.string())
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    return match (cmd.as_str(), rest.as_slice()) {
+                        ("get", []) => Ok(Self::Get { name: None }),
+                        ("get", [name]) => Ok(Self::Get {
+                            name: Some(name.clone()),
+                        }),
+                        ("set", [name, value]) => Ok(Self::Set {
+                            name: name.clone(),
+                            value: value.clone(),
+                        }),
+                        ("quit", []) => Ok(Self::Quit),
+                        _ => Err(format!("invalid command: {cmd} {}", rest.join(" ")).into()),
+                    };
+                }
 
                 _ => return Err(arg.unexpected()),
             }
         }
 
-        Ok(Self { config })
+        Ok(Self::Run { config })
     }
+}
+
+fn start(app: &gtk4::Application, config: Config, shared: Rc<Shared>) {
+    let Some(display) = gdk::Display::default() else {
+        fatal!("No display available!");
+    };
+
+    let data_dir = glib::user_data_dir().join("wwwidgets");
+    let cache_dir = glib::user_cache_dir().join("wwwidgets");
+
+    debug!("Resolved data dir: {}", data_dir.display());
+    debug!("Resolved cache dir: {}", cache_dir.display());
+
+    let session = webkit6::NetworkSession::new(data_dir.to_str(), cache_dir.to_str());
+
+    let mut pressure = webkit6::MemoryPressureSettings::new();
+
+    pressure.set_memory_limit(150);
+    pressure.set_strict_threshold(0.75);
+    pressure.set_conservative_threshold(0.5);
+
+    let ctx = webkit6::WebContext::builder()
+        .memory_pressure_settings(&pressure)
+        .build();
+
+    ctx.set_cache_model(webkit6::CacheModel::DocumentViewer);
+
+    let first = webkit6::WebView::builder()
+        .network_session(&session)
+        .web_context(&ctx)
+        .build();
+
+    if let Some(settings) = first.settings() {
+        debug!("Devtools: {}", config.devtools);
+        settings.set_enable_developer_extras(config.devtools);
+    }
+
+    for widget in &config.widgets {
+        for monitor in monitors_for(&display, &widget.monitors) {
+            spawn_window(
+                app,
+                &first,
+                Rc::clone(&shared),
+                &config.dir,
+                widget,
+                &monitor,
+            );
+        }
+    }
+
+    let hold = app.hold();
+    let app = app.clone();
+    let widgets = config.widgets.clone();
+    let dir = config.dir.clone();
+
+    display
+        .monitors()
+        .connect_items_changed(move |list, position, _removed, added| {
+            let _hold = &hold;
+            for i in position..position + added {
+                let Some(monitor) = list.item(i).and_downcast::<gdk::Monitor>() else {
+                    continue;
+                };
+
+                for widget in &widgets {
+                    if widget.wants(&monitor) {
+                        spawn_window(&app, &first, Rc::clone(&shared), &dir, widget, &monitor);
+                    }
+                }
+            }
+        });
 }
 
 fn main() -> gtk4::glib::ExitCode {
@@ -240,98 +372,59 @@ fn main() -> gtk4::glib::ExitCode {
 
     route_glib_logs();
 
-    debug!("Parsing config...");
+    let shared = Rc::new(Shared::default());
+    let app = gtk4::Application::builder()
+        .application_id(APP_ID)
+        .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)
+        .build();
 
-    let args = match Args::parse() {
-        Ok(a) => a,
-        Err(e) => fatal!("Failed to parse args: {e}"),
-    };
-
-    let config = match Config::parse(args.config.as_ref()) {
-        Ok(c) => c,
-        Err(e) => fatal!("{e}"),
-    };
-
-    let app = gtk4::Application::builder().application_id(APP_ID).build();
-
-    app.connect_activate(move |app| {
-        if !app.windows().is_empty() {
-            debug!("App was launched a second time. Skipping.");
-            return;
-        }
-
-        let Some(display) = gdk::Display::default() else {
-            fatal!("No display available!");
+    app.connect_command_line(move |app, cmdline| {
+        let fail = |msg: &str| {
+            cmdline.printerr_literal(&format!("{msg}\n"));
+            glib::ExitCode::FAILURE
         };
 
-        let data_dir = glib::user_data_dir().join("wwwidgets");
-        let cache_dir = glib::user_cache_dir().join("wwwidgets");
+        let command = match Command::parse(cmdline.arguments()) {
+            Ok(c) => c,
+            Err(e) => return fail(&e.to_string()),
+        };
 
-        debug!("Resolved data dir: {}", data_dir.display());
-        debug!("Resolved cache dir: {}", cache_dir.display());
-
-        let session = webkit6::NetworkSession::new(data_dir.to_str(), cache_dir.to_str());
-
-        let mut pressure = webkit6::MemoryPressureSettings::new();
-
-        pressure.set_memory_limit(150);
-        pressure.set_strict_threshold(0.75);
-        pressure.set_conservative_threshold(0.5);
-
-        let ctx = webkit6::WebContext::builder()
-            .memory_pressure_settings(&pressure)
-            .build();
-
-        ctx.set_cache_model(webkit6::CacheModel::DocumentViewer);
-
-        let shared = Rc::new(Shared::default());
-
-        let first = webkit6::WebView::builder()
-            .network_session(&session)
-            .web_context(&ctx)
-            .build();
-
-        if let Some(settings) = first.settings() {
-            debug!("Devtools: {}", config.devtools);
-            settings.set_enable_developer_extras(config.devtools);
+        if !cmdline.is_remote() && !matches!(command, Command::Run { .. }) {
+            return fail("wwwidgets is not running");
         }
 
-        for widget in &config.widgets {
-            for monitor in monitors_for(&display, &widget.monitors) {
-                spawn_window(
-                    app,
-                    &first,
-                    Rc::clone(&shared),
-                    &config.dir,
-                    widget,
-                    &monitor,
-                );
-            }
-        }
-
-        let hold = app.hold();
-        let app = app.clone();
-        let widgets = config.widgets.clone();
-        let dir = config.dir.clone();
-
-        display
-            .monitors()
-            .connect_items_changed(move |list, position, _removed, added| {
-                let _hold = &hold;
-                for i in position..position + added {
-                    let Some(monitor) = list.item(i).and_downcast::<gdk::Monitor>() else {
-                        continue;
-                    };
-
-                    for widget in &widgets {
-                        if widget.wants(&monitor) {
-                            spawn_window(&app, &first, Rc::clone(&shared), &dir, widget, &monitor);
-                        }
-                    }
+        match command {
+            Command::Run { config } => {
+                if !app.windows().is_empty() {
+                    return fail("wwwidgets is already running");
                 }
-            });
+
+                let config = config.map(|p| cmdline.cwd().map(|d| d.join(&p)).unwrap_or(p));
+
+                match Config::parse(config.as_ref()) {
+                    Ok(config) => start(app, config, Rc::clone(&shared)),
+                    Err(e) => return fail(&e),
+                }
+            }
+            Command::Get { name: Some(name) } => match shared.state.borrow().get(&name) {
+                Some(value) => cmdline.print_literal(&format!("{value}\n")),
+                None => return glib::ExitCode::FAILURE,
+            },
+            Command::Get { name: None } => {
+                for (name, value) in shared.state.borrow().iter() {
+                    cmdline.print_literal(&format!("{name} = {value}\n"));
+                }
+            }
+            Command::Set { name, value } => {
+                if let Err(e) = shared.set_state(name, value, None) {
+                    return fail(&e);
+                }
+            }
+            Command::Quit => app.quit(),
+        }
+
+        glib::ExitCode::SUCCESS
     });
 
-    // Don't let gtk try to parse cli args
-    app.run_with_args::<&str>(&[])
+    app.run()
 }

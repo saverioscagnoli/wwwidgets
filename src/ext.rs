@@ -12,6 +12,7 @@ use gtk4_layer_shell::Edge;
 use gtk4_layer_shell::KeyboardMode as GtkKeyboardMode;
 use gtk4_layer_shell::LayerShell;
 
+use serde::Deserialize;
 use webkit6::prelude::WebViewExt;
 
 use crate::config::Anchor;
@@ -19,6 +20,14 @@ use crate::config::Exclusivity;
 use crate::config::KeyboardMode;
 use crate::config::Layer;
 use crate::config::Margin;
+
+#[derive(Deserialize)]
+pub struct Rect {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
 
 thread_local! {
     static TRANSPARENCY_CSS_LOADED: Cell<bool> = const { Cell::new(false) };
@@ -121,6 +130,20 @@ pub trait LayerWindowExt: IsA<gtk4::Window> {
             KeyboardMode::None => self.set_keyboard_mode(GtkKeyboardMode::None),
             KeyboardMode::OnDemand => self.set_keyboard_mode(GtkKeyboardMode::OnDemand),
             KeyboardMode::Exclusive => self.set_keyboard_mode(GtkKeyboardMode::Exclusive),
+        }
+    }
+
+    fn apply_input_region(&self, rects: Option<&[Rect]>) {
+        let region = rects.map(|rects| {
+            let rects = rects
+                .iter()
+                .map(|r| cairo::RectangleInt::new(r.x, r.y, r.width, r.height))
+                .collect::<Vec<_>>();
+            cairo::Region::create_rectangles(&rects)
+        });
+
+        if let Some(surface) = self.as_ref().surface() {
+            surface.set_input_region(region.as_ref());
         }
     }
 }

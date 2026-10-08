@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>input region</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      height: 100vh;
+      font: 13px monospace;
+      color: #cdd6f4;
+      background: transparent;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 12px;
+      padding: 8px;
+      border: 1px dashed #7f849c;
+      border-radius: 12px;
+    }
+
+    #panel {
+      width: 100%;
+      padding: 16px;
+      background: #1e1e2e;
+      border-radius: 12px;
+    }
+
+    #panel[hidden] {
+      display: none;
+    }
+
+    #dock {
+      display: flex;
+      gap: 8px;
+      padding: 8px;
+      background: #1e1e2e;
+      border-radius: 14px;
+    }
+
+    button {
+      font: inherit;
+      color: inherit;
+      background: #313244;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 14px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #45475a;
+    }
+
+    button.on {
+      background: #89b4fa;
+      color: #1e1e2e;
+    }
+  </style>
+</head>
+<body>
+  <div id="panel" class="interactive" hidden>
+    <strong>panel</strong>
+    <p>This card and the dock receive clicks.</p>
+    <p>Everything inside the dashed border passes clicks through to the windows below.</p>
+    <p>clicks: <span id="count">0</span></p>
+  </div>
+
+  <div id="dock" class="interactive">
+    <button id="toggle">panel</button>
+    <button id="click">click me</button>
+    <button id="border" class="on">border</button>
+  </div>
+
+  <script type="module">
+    const panel = document.getElementById("panel");
+    const count = document.getElementById("count");
+    const toggle = document.getElementById("toggle");
+    const border = document.getElementById("border");
+    let clicks = 0;
+
+    wwwidgets.window.inputRegionFrom(".interactive");
+
+    toggle.onclick = () => {
+      panel.hidden = !panel.hidden;
+      toggle.classList.toggle("on", !panel.hidden);
+    };
+
+    document.getElementById("click").onclick = () => {
+      clicks += 1;
+      count.textContent = clicks;
+    };
+
+    border.onclick = () => {
+      const on = border.classList.toggle("on");
+      document.body.style.borderColor = on ? "" : "transparent";
+    };
+  </script>
+</body>
+</html>
