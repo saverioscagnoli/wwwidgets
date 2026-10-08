@@ -193,16 +193,16 @@ impl Anchor {
 #[derive(Debug, Clone, Copy)]
 pub struct NamedMargin {
     #[serde(default)]
-    top: u32,
+    pub top: u32,
 
     #[serde(default)]
-    right: u32,
+    pub right: u32,
 
     #[serde(default)]
-    bottom: u32,
+    pub bottom: u32,
 
     #[serde(default)]
-    left: u32,
+    pub left: u32,
 }
 
 #[derive(Deserialize)]
@@ -246,6 +246,7 @@ pub enum KeyboardMode {
 
 #[derive(Deserialize)]
 #[derive(Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct WidgetConfig {
     pub path: String,
 
@@ -481,6 +482,7 @@ impl WidgetConfig {
 
 #[derive(Deserialize)]
 #[derive(Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(default = "Config::default_devtools")]
     pub devtools: bool,

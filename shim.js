@@ -27,5 +27,19 @@
       }
       return { id, kill: () => post({ cmd: "kill", id }) };
     },
+    window: {
+      isVisible:() => post({ cmd: "isvisible"}),
+      hide: () => post({ cmd: "hide" }),
+      show: () => post({ cmd: "show" }),
+      setSize: (w, h) => post({ cmd: "setsize", argv: [w, h] }),
+      setWidth: w => post({ cmd: "setwidth", argv: w }),
+      setHeight: h => post({ cmd: "setheight", argv: h }),
+      setKeyboard: m => post({ cmd: "setkeyboard", argv: m }),
+      setClickThrough: c => post({ cmd: "setclickthrough", argv: c }),
+      setMargin: m => post({ cmd: "setmargin", argv: m }),
+      setAnchor: a => post({ cmd: "setanchor", argv: a }),
+      setLayer: l => post({ cmd: "setlayer", argv: l }),
+      setExclusive: e => post({ cmd: "setexclusive", argv: e })
+    },
   };
 })();
