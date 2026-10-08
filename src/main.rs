@@ -4,6 +4,12 @@ mod ext;
 mod navigation;
 mod util;
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::path::Path;
+use std::path::PathBuf;
+use std::rc::Rc;
+
 use gtk4::gdk;
 use gtk4::gdk::prelude::DisplayExt;
 use gtk4::gdk::prelude::MonitorExt;
@@ -37,6 +43,12 @@ use crate::config::WidgetConfig;
 use crate::ext::LayerWindowExt;
 
 const APP_ID: &str = "dev.svscagn.wwwidgets";
+
+#[derive(Default)]
+pub struct Shared {
+    pub state: RefCell<HashMap<String, String>>,
+    pub views: RefCell<Vec<glib::WeakRef<webkit6::WebView>>>,
+}
 
 struct Formatter;
 
@@ -105,6 +117,8 @@ fn monitors_for(display: &gdk::Display, selection: &Monitors) -> Vec<gdk::Monito
 fn spawn_window(
     app: &gtk4::Application,
     webview: &webkit6::WebView,
+    shared: Rc<Shared>,
+    base: &Path,
     widget: &WidgetConfig,
     monitor: &gdk::Monitor,
 ) {
@@ -119,12 +133,13 @@ fn spawn_window(
 
     let webview = builder.build();
 
-    let uri = widget.resolve_uri();
+    let uri = widget.resolve_uri(base);
 
     navigation::pin(&webview, &uri);
 
     if widget.bridge_enabled(&uri) {
-        bridge::setup(&webview);
+        shared.views.borrow_mut().push(webview.downgrade());
+        bridge::setup(&webview, shared);
     } else {
         debug!("Bridge disabled for {uri}");
     }
@@ -187,6 +202,31 @@ fn spawn_window(
     });
 }
 
+struct Args {
+    config: Option<PathBuf>,
+}
+
+impl Args {
+    pub fn parse() -> Result<Self, lexopt::Error> {
+        use lexopt::prelude::*;
+
+        let mut config = None;
+        let mut parser = lexopt::Parser::from_env();
+
+        while let Some(arg) = parser.next()? {
+            match arg {
+                Short('c') | Long("config") => {
+                    config = Some(parser.value()?.parse()?);
+                }
+
+                _ => return Err(arg.unexpected()),
+            }
+        }
+
+        Ok(Self { config })
+    }
+}
+
 fn main() -> gtk4::glib::ExitCode {
     let _ = traccia::init(
         traccia::Config::default()
@@ -202,7 +242,12 @@ fn main() -> gtk4::glib::ExitCode {
 
     debug!("Parsing config...");
 
-    let config = match Config::parse() {
+    let args = match Args::parse() {
+        Ok(a) => a,
+        Err(e) => fatal!("Failed to parse args: {e}"),
+    };
+
+    let config = match Config::parse(args.config.as_ref()) {
         Ok(c) => c,
         Err(e) => fatal!("{e}"),
     };
@@ -239,6 +284,8 @@ fn main() -> gtk4::glib::ExitCode {
 
         ctx.set_cache_model(webkit6::CacheModel::DocumentViewer);
 
+        let shared = Rc::new(Shared::default());
+
         let first = webkit6::WebView::builder()
             .network_session(&session)
             .web_context(&ctx)
@@ -251,13 +298,14 @@ fn main() -> gtk4::glib::ExitCode {
 
         for widget in &config.widgets {
             for monitor in monitors_for(&display, &widget.monitors) {
-                spawn_window(app, &first, widget, &monitor);
+                spawn_window(app, &first, Rc::clone(&shared), &config.dir, widget, &monitor);
             }
         }
 
         let hold = app.hold();
         let app = app.clone();
         let widgets = config.widgets.clone();
+        let dir = config.dir.clone();
 
         display
             .monitors()
@@ -270,7 +318,7 @@ fn main() -> gtk4::glib::ExitCode {
 
                     for widget in &widgets {
                         if widget.wants(&monitor) {
-                            spawn_window(&app, &first, widget, &monitor);
+                            spawn_window(&app, &first, Rc::clone(&shared), &dir, widget, &monitor);
                         }
                     }
                 }

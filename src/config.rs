@@ -300,12 +300,12 @@ impl WidgetConfig {
         false
     }
 
-    pub fn resolve_uri(&self) -> String {
+    pub fn resolve_uri(&self, base: &Path) -> String {
         if glib::Uri::peek_scheme(&self.path).is_some() {
             return self.path.clone();
         }
 
-        let path = CONFIG_DIR.join(util::expand_tilde(Path::new(&self.path)));
+        let path = base.join(util::expand_tilde(Path::new(&self.path)));
         let path = if path.is_dir() {
             path.join("index.html")
         } else {
@@ -337,6 +337,9 @@ pub struct Config {
     #[serde(default = "Config::default_devtools")]
     pub devtools: bool,
     pub widgets: Vec<WidgetConfig>,
+
+    #[serde(skip)]
+    pub dir: PathBuf,
 }
 
 impl Config {
@@ -344,18 +347,40 @@ impl Config {
         cfg!(debug_assertions)
     }
 
-    pub fn parse() -> Result<Self, String> {
+    pub fn parse(path: Option<&PathBuf>) -> Result<Self, String> {
+        let (path, content) = match path {
+            Some(path) => match fs::read_to_string(path) {
+                Ok(s) => (path, s),
+                Err(e) => return Err(format!("failed to read {}: {e}", path.display())),
+            },
+            None => Self::find()?,
+        };
+
+        info!("Using config file at: {}", path.display());
+
+        let mut config: Self =
+            json5::from_str(&content).map_err(|e| format!("Invalid config: {e}"))?;
+
+        let path = fs::canonicalize(path)
+            .map_err(|e| format!("failed to resolve {}: {e}", path.display()))?;
+
+        config.dir = path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| CONFIG_DIR.clone());
+
+        Ok(config)
+    }
+
+    fn find() -> Result<(&'static PathBuf, String), String> {
         for path in POSSIBLE_CONFIG_PATHS.iter() {
             debug!("Trying path: {}", path.display());
 
-            let content = match fs::read_to_string(path) {
-                Ok(s) => s,
+            match fs::read_to_string(path) {
+                Ok(s) => return Ok((path, s)),
                 Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
                 Err(e) => return Err(format!("failed to read {}: {e}", path.display())),
-            };
-
-            info!("Using config file at: {}", path.display());
-            return json5::from_str(&content).map_err(|e| format!("Invalid config: {e}"));
+            }
         }
 
         Err("Tried all possible paths, but no config file was found.".into())

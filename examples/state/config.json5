@@ -1,0 +1,21 @@
+{
+  "widgets": [
+    {
+      "path": "bar.html",
+      "monitors": "all",
+      "width": "99%",
+      "height": 40,
+      "anchor": "top"
+    },
+    {
+      "path": "popup.html",
+      "monitors": "all",
+      "width": 300,
+      "height": 160,
+      "anchor": "top-right",
+      "margin": { "top": 52, "right": 12 },
+      "layer": "overlay",
+      "keyboard": "on-demand"
+    }
+  ]
+}

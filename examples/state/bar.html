@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>bar</title>
+  <style>
+    body {
+      font-family: monospace;
+      color: white;
+      background: #1e1e2e;
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 0 12px;
+      box-sizing: border-box;
+    }
+
+    button {
+      font: inherit;
+      color: inherit;
+      background: #313244;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 10px;
+      opacity: 0.5;
+    }
+
+    button.open {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <button id="popup-btn">popup (0)</button>
+
+  <script type="module">
+    const btn = document.getElementById("popup-btn");
+    let open = false;
+    let count = 0;
+
+    const render = () => {
+      btn.textContent = `popup (${count})`;
+      btn.classList.toggle("open", open);
+    };
+
+    wwwidgets.state.onChange("popup.open", (v) => {
+      open = v;
+      render();
+    });
+
+    wwwidgets.state.onChange("popup.count", (n) => {
+      count = n;
+      render();
+    });
+
+    btn.onclick = () => wwwidgets.state.set("popup.open", !open);
+  </script>
+</body>
+</html>

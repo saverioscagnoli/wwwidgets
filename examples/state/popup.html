@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>popup</title>
+  <style>
+    body {
+      font-family: monospace;
+      color: white;
+      background: #1e1e2e;
+      margin: 0;
+      padding: 12px;
+    }
+
+    button {
+      font: inherit;
+      color: inherit;
+      background: #313244;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 10px;
+    }
+  </style>
+</head>
+<body>
+  <h3>popup</h3>
+  <p>clicks: <span id="count">0</span></p>
+  <button id="inc">+1</button>
+  <button id="close">close</button>
+
+  <script type="module">
+    const countEl = document.getElementById("count");
+    let count = 0;
+
+    wwwidgets.window.hide();
+
+    wwwidgets.state.onChange("popup.open", (open) => {
+      open ? wwwidgets.window.show() : wwwidgets.window.hide();
+    });
+
+    wwwidgets.state.onChange("popup.count", (n) => {
+      count = n;
+      countEl.textContent = n;
+    });
+
+    document.getElementById("inc").onclick = () => wwwidgets.state.set("popup.count", count + 1);
+    document.getElementById("close").onclick = () => wwwidgets.state.set("popup.open", false);
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") wwwidgets.state.set("popup.open", false);
+    });
+  </script>
+</body>
+</html>

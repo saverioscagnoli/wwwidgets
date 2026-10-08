@@ -20,6 +20,7 @@ use traccia::error;
 use webkit6::javascriptcore as jsc;
 use webkit6::prelude::WebViewExt;
 
+use crate::Shared;
 use crate::config::Anchor;
 use crate::config::Exclusivity;
 use crate::config::KeyboardMode;
@@ -73,6 +74,8 @@ enum Message {
     Exec { argv: Vec<String> },
     Spawn { id: u32, argv: Vec<String> },
     Kill { id: u32 },
+    GetState { name: String },
+    SetState { name: String, value: String },
     #[serde(untagged)]
     Window(WindowMessage),
 }
@@ -200,7 +203,7 @@ fn kill_all(processes: &Processes) {
     }
 }
 
-pub fn setup(webview: &webkit6::WebView) {
+pub fn setup(webview: &webkit6::WebView, shared: Rc<Shared>) {
     let Some(ucm) = webview.user_content_manager() else {
         error!("Webview has no user content manager");
         return;
@@ -269,6 +272,50 @@ pub fn setup(webview: &webkit6::WebView) {
             Ok(Message::Kill { id }) => {
                 if let Some(proc) = processes.borrow_mut().remove(&id) {
                     proc.force_exit();
+                }
+
+                reply.return_value(&jsc::Value::new_undefined(&ctx));
+            }
+            Ok(Message::GetState { name }) => {
+                let state = shared
+                    .state
+                    .borrow()
+                    .get(&name)
+                    .map(|s| jsc::Value::from_json(&ctx, s))
+                    .unwrap_or_else(|| jsc::Value::new_undefined(&ctx));
+
+                reply.return_value(&state);
+            }
+            Ok(Message::SetState { name, value }) => {
+                if json5::from_str::<serde::de::IgnoredAny>(&value).is_err() {
+                    reply.return_error_message("setstate: value is not valid JSON");
+                    return true;
+                }
+
+                if shared.state.borrow().get(&name) == Some(&value) {
+                    reply.return_value(&jsc::Value::new_undefined(&ctx));
+                    return true;
+                }
+
+                let Ok(key) = json5::to_string(&name) else {
+                    reply.return_error_message("setstate: invalid name");
+                    return true;
+                };
+
+                let script = format!("window.__wwwidgets_state?.({key}, {value})");
+                let sender = weak.upgrade();
+
+                shared.state.borrow_mut().insert(name, value);
+
+                let targets = {
+                    let mut views = shared.views.borrow_mut();
+
+                    views.retain(|w| w.upgrade().is_some());
+                    views.iter().filter_map(|w| w.upgrade()).collect::<Vec<_>>()
+                };
+
+                for view in targets.iter().filter(|v| Some(*v) != sender.as_ref()) {
+                    view.evaluate_javascript(&script, None, None, gio::Cancellable::NONE, |_| {});
                 }
 
                 reply.return_value(&jsc::Value::new_undefined(&ctx));
