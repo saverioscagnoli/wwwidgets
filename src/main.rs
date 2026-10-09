@@ -2,7 +2,9 @@ mod bridge;
 mod config;
 mod ext;
 mod navigation;
+mod notifications;
 mod util;
+mod workspaces;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -44,6 +46,7 @@ use crate::config::MonitorPreset;
 use crate::config::Monitors;
 use crate::config::WidgetConfig;
 use crate::ext::LayerWindowExt;
+use crate::notifications::Notifications;
 
 const APP_ID: &str = "dev.svscagn.wwwidgets";
 
@@ -51,6 +54,8 @@ const APP_ID: &str = "dev.svscagn.wwwidgets";
 pub struct Shared {
     pub state: RefCell<HashMap<String, String>>,
     pub views: RefCell<Vec<glib::WeakRef<webkit6::WebView>>>,
+    pub notifications: Notifications,
+    pub workspaces: RefCell<Option<workspaces::ExtWorkspaces>>,
 }
 
 impl Shared {
@@ -402,7 +407,17 @@ fn main() -> gtk4::glib::ExitCode {
                 let config = config.map(|p| cmdline.cwd().map(|d| d.join(&p)).unwrap_or(p));
 
                 match Config::parse(config.as_ref()) {
-                    Ok(config) => start(app, config, Rc::clone(&shared)),
+                    Ok(config) => {
+                        if config.notifications {
+                            notifications::serve(Rc::clone(&shared));
+                        }
+
+                        if config.workspaces {
+                            workspaces::serve(Rc::clone(&shared));
+                        }
+
+                        start(app, config, Rc::clone(&shared));
+                    }
                     Err(e) => return fail(&e),
                 }
             }

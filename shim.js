@@ -98,5 +98,14 @@
       get: (name) => post({ cmd: "getmonitor", name }),
       list: () => post({ cmd: "listmonitors" }),
     },
+    notifications: {
+      dismiss: (id) => post({ cmd: "dismiss", id }),
+      invoke: (id, action = "default") => post({ cmd: "invoke", id, action }),
+    },
+    workspaces: {
+      list: () => post({ cmd: "getstate", name: "workspaces" }),
+      onChange: (fn) => window.wwwidgets.state.onChange("workspaces", fn),
+      activate: (id) => post({ cmd: "activateworkspace", id }),
+    },
   };
 })();

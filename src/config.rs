@@ -340,11 +340,21 @@ pub struct Config {
 
     #[serde(skip)]
     pub dir: PathBuf,
+
+    #[serde(default)]
+    pub notifications: bool,
+
+    #[serde(default = "Config::default_workspaces")]
+    pub workspaces: bool,
 }
 
 impl Config {
     const fn default_devtools() -> bool {
         cfg!(debug_assertions)
+    }
+
+    const fn default_workspaces() -> bool {
+        true
     }
 
     pub fn parse(path: Option<&PathBuf>) -> Result<Self, String> {

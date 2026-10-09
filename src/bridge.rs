@@ -31,6 +31,7 @@ use crate::config::Layer;
 use crate::config::Margin;
 use crate::ext::LayerWindowExt;
 use crate::ext::Rect;
+use crate::notifications;
 use crate::util;
 
 const SHIM: &str = include_str!("../shim.js");
@@ -121,6 +122,9 @@ enum Message {
     SetState { name: String, value: String },
     GetMonitor { name: Option<String> },
     ListMonitors,
+    Dismiss { id: u32 },
+    Invoke { id: u32, action: String },
+    ActivateWorkspace { id: String },
     #[serde(untagged)]
     Window(WindowMessage),
 }
@@ -357,6 +361,27 @@ pub fn setup(webview: &webkit6::WebView, shared: Rc<Shared>, monitor: gdk::Monit
                     .collect::<Vec<_>>();
 
                 util::reply_json(&ctx, reply, &monitors);
+            }
+            Ok(Message::Dismiss { id }) => {
+                notifications::close(&shared, id, 2);
+                reply.return_value(&jsc::Value::new_undefined(&ctx));
+            }
+            Ok(Message::Invoke { id, action }) => {
+                notifications::invoke(&shared, id, &action);
+                reply.return_value(&jsc::Value::new_undefined(&ctx));
+            }
+            Ok(Message::ActivateWorkspace { id }) => {
+                let res = shared
+                    .workspaces
+                    .borrow()
+                    .as_ref()
+                    .ok_or_else(|| "workspaces not available".to_string())
+                    .and_then(|w| w.activate(&id));
+
+                match res {
+                    Ok(()) => reply.return_value(&jsc::Value::new_undefined(&ctx)),
+                    Err(e) => reply.return_error_message(&format!("activateworkspace: {e}")),
+                }
             }
             Ok(Message::Window(wmsg)) => {
                 let Some(window) = weak

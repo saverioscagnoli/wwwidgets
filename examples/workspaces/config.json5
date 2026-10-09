@@ -1,0 +1,14 @@
+{
+  "workspaces": true,
+  "widgets": [
+    {
+      "path": "index.html",
+      "monitors": "all",
+      "width": "99%",
+      "height": 36,
+      "anchor": "top",
+      "margin": { "top": 6 },
+      "exclusive": true
+    }
+  ]
+}

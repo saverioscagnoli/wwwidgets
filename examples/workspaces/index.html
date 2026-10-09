@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>workspaces</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      height: 100vh;
+      padding: 0 8px;
+      font: 13px monospace;
+      color: #cdd6f4;
+      background: #1e1e2e;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    #workspaces {
+      display: flex;
+      gap: 4px;
+    }
+
+    button {
+      min-width: 28px;
+      height: 24px;
+      padding: 0 8px;
+      font: inherit;
+      color: inherit;
+      background: #313244;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 120ms, color 120ms;
+    }
+
+    button:hover {
+      background: #45475a;
+    }
+
+    button.active {
+      color: #1e1e2e;
+      background: #89b4fa;
+    }
+
+    button.urgent {
+      color: #1e1e2e;
+      background: #f38ba8;
+    }
+
+    button:disabled {
+      cursor: default;
+      opacity: 0.5;
+    }
+
+    #monitor {
+      margin-left: auto;
+      color: #7f849c;
+    }
+
+    #empty {
+      color: #7f849c;
+    }
+  </style>
+</head>
+<body>
+  <div id="workspaces"><span id="empty">no workspaces (is ext-workspace-v1 supported?)</span></div>
+  <span id="monitor"></span>
+
+  <script type="module">
+    const { connector } = await wwwidgets.monitors.get();
+    const container = document.getElementById("workspaces");
+
+    document.getElementById("monitor").textContent = connector ?? "";
+
+    const render = (list) => {
+      const visible = list.filter(
+        (w) => !w.hidden && (w.outputs.length === 0 || w.outputs.includes(connector)),
+      );
+
+      if (visible.length === 0) return;
+
+      container.replaceChildren(
+        ...visible.map((w) => {
+          const button = document.createElement("button");
+          button.textContent = w.name || w.id;
+          button.classList.toggle("active", w.active);
+          button.classList.toggle("urgent", w.urgent && !w.active);
+          button.disabled = !w.canActivate;
+          button.addEventListener("click", () => wwwidgets.workspaces.activate(w.id));
+          return button;
+        }),
+      );
+    };
+
+    wwwidgets.workspaces.onChange(render);
+  </script>
+</body>
+</html>
