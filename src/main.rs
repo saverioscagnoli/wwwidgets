@@ -1,4 +1,5 @@
 mod audio;
+mod bluetooth;
 mod bridge;
 mod config;
 mod ext;
@@ -45,6 +46,7 @@ use traccia::info;
 use webkit6::prelude::WebViewExt;
 
 use crate::audio::Audio;
+use crate::bluetooth::Bluetooth;
 use crate::config::Config;
 use crate::config::MonitorPreset;
 use crate::config::Monitors;
@@ -63,6 +65,7 @@ pub struct Shared {
     pub workspaces: RefCell<Option<workspaces::ExtWorkspaces>>,
     pub tray: Tray,
     pub audio: RefCell<Option<Audio>>,
+    pub bluetooth: Bluetooth,
 }
 
 impl Shared {
@@ -432,6 +435,10 @@ fn main() -> gtk4::glib::ExitCode {
 
                         if config.audio {
                             audio::serve(Rc::clone(&shared));
+                        }
+
+                        if config.bluetooth {
+                            bluetooth::serve(Rc::clone(&shared));
                         }
 
                         start(app, config, Rc::clone(&shared));

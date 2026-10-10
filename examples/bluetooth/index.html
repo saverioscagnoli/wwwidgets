@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>bluetooth</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      height: 100vh;
+      background: transparent;
+      overflow: hidden;
+    }
+
+    body {
+      font: 13px monospace;
+      color: #cdd6f4;
+      user-select: none;
+    }
+
+    #panel {
+      height: 100%;
+      padding: 12px;
+      background: #1e1e2e;
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    header strong {
+      margin-right: auto;
+    }
+
+    button {
+      padding: 4px 10px;
+      font: inherit;
+      color: inherit;
+      background: #313244;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #45475a;
+    }
+
+    button.on {
+      background: #89b4fa;
+      color: #1e1e2e;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    h3 {
+      margin: 4px 0 0;
+      font-size: 11px;
+      font-weight: normal;
+      color: #7f849c;
+      text-transform: uppercase;
+    }
+
+    ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    #lists {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    li {
+      height: 34px;
+      padding: 0 8px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    li:hover {
+      background: #313244;
+    }
+
+    li.connected .name {
+      color: #a6e3a1;
+    }
+
+    li.busy {
+      opacity: 0.5;
+    }
+
+    .name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .battery {
+      color: #7f849c;
+    }
+
+    li button {
+      padding: 2px 8px;
+    }
+
+    #empty,
+    #error {
+      color: #7f849c;
+    }
+
+    #error {
+      color: #f38ba8;
+      min-height: 1em;
+    }
+
+    #prompt {
+      padding: 10px;
+      background: #313244;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    #prompt[hidden] {
+      display: none;
+    }
+
+    #prompt-code {
+      font-size: 22px;
+      letter-spacing: 4px;
+      text-align: center;
+      color: #f9e2af;
+    }
+
+    #prompt-code:empty,
+    #prompt-input[hidden] {
+      display: none;
+    }
+
+    #prompt-input {
+      padding: 4px 8px;
+      font: inherit;
+      color: inherit;
+      background: #1e1e2e;
+      border: 1px solid #45475a;
+      border-radius: 6px;
+      outline: none;
+    }
+
+    #prompt-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+
+    #prompt-actions button {
+      background: #45475a;
+    }
+
+    #prompt-actions button.primary {
+      background: #89b4fa;
+      color: #1e1e2e;
+    }
+  </style>
+</head>
+<body>
+  <div id="panel">
+    <header>
+      <strong id="adapter">bluetooth</strong>
+      <button id="scan">scan</button>
+      <button id="power">off</button>
+    </header>
+
+    <div id="lists">
+      <h3>paired</h3>
+      <ul id="paired"></ul>
+      <h3>available</h3>
+      <ul id="available"></ul>
+      <span id="empty" hidden>no adapter</span>
+    </div>
+
+    <div id="prompt" hidden>
+      <span id="prompt-text"></span>
+      <span id="prompt-code"></span>
+      <input id="prompt-input" hidden>
+      <div id="prompt-actions">
+        <button id="prompt-no">cancel</button>
+        <button id="prompt-yes" class="primary">ok</button>
+      </div>
+    </div>
+
+    <span id="error"></span>
+  </div>
+
+  <script type="module">
+    const bt = wwwidgets.bluetooth;
+    const $ = (id) => document.getElementById(id);
+    const busy = new Set();
+    let state = { adapters: [], devices: [] };
+    let adapter;
+
+    const run = async (id, action) => {
+      busy.add(id);
+      $("error").textContent = "";
+      render();
+
+      try {
+        await action();
+      } catch (e) {
+        $("error").textContent = e.message;
+      } finally {
+        busy.delete(id);
+        render();
+      }
+    };
+
+    const button = (label, onclick) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.onclick = (e) => {
+        e.stopPropagation();
+        onclick();
+      };
+      return b;
+    };
+
+    const row = (d) => {
+      const li = document.createElement("li");
+      li.classList.toggle("connected", d.connected);
+      li.classList.toggle("busy", busy.has(d.id));
+
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = d.name || d.address;
+      name.title = d.address;
+      li.append(name);
+
+      if (d.battery != null) {
+        const battery = document.createElement("span");
+        battery.className = "battery";
+        battery.textContent = `${d.battery}%`;
+        li.append(battery);
+      }
+
+      if (busy.has(d.id)) return li;
+
+      if (d.paired) {
+        li.append(
+          d.connected
+            ? button("disconnect", () => run(d.id, () => bt.disconnect(d.id)))
+            : button("connect", () => run(d.id, () => bt.connect(d.id))),
+          button("x", () => run(d.id, () => bt.forget(d.id))),
+        );
+      } else {
+        li.append(
+          button("pair", () =>
+            run(d.id, async () => {
+              await bt.pair(d.id);
+              await bt.connect(d.id).catch(() => {});
+            }),
+          ),
+        );
+      }
+
+      return li;
+    };
+
+    const renderPrompt = () => {
+      const req = state.request;
+      $("prompt").hidden = !req;
+      if (!req) return;
+
+      const who = req.name || "device";
+      const text = {
+        confirm: `Does ${who} show this code?`,
+        authorize: req.service ? `Allow ${who} to use a service?` : `Allow ${who} to pair?`,
+        pin: `Enter the PIN for ${who}`,
+        passkey: `Enter the passkey shown on ${who}`,
+        display: `Type this code on ${who}`,
+      }[req.kind];
+
+      const input = req.kind === "pin" || req.kind === "passkey";
+      const wasHidden = $("prompt-input").hidden;
+
+      $("prompt-text").textContent = text;
+      $("prompt-code").textContent = req.code ?? "";
+      $("prompt-input").hidden = !input;
+      $("prompt-input").inputMode = req.kind === "passkey" ? "numeric" : "text";
+      $("prompt-yes").hidden = req.kind === "display";
+      $("prompt-yes").textContent = input ? "ok" : "yes";
+      $("prompt-no").textContent = req.kind === "display" ? "dismiss" : input ? "cancel" : "no";
+
+      if (input && wasHidden) {
+        $("prompt-input").value = "";
+        wwwidgets.window.setKeyboard("on-demand");
+        $("prompt-input").focus();
+      }
+    };
+
+    const answer = async (accept) => {
+      const value = $("prompt-input").hidden ? undefined : $("prompt-input").value;
+
+      try {
+        await bt.respond(accept, value);
+        $("error").textContent = "";
+      } catch (e) {
+        $("error").textContent = e.message;
+      }
+    };
+
+    const render = () => {
+      renderPrompt();
+      adapter = state.adapters[0];
+      const powered = !!adapter?.powered;
+
+      $("empty").hidden = !!adapter;
+      $("adapter").textContent = adapter?.name ?? "bluetooth";
+      $("power").textContent = powered ? "on" : "off";
+      $("power").classList.toggle("on", powered);
+      $("power").disabled = !adapter;
+      $("scan").classList.toggle("on", !!adapter?.discovering);
+      $("scan").disabled = !powered;
+
+      const devices = powered
+        ? state.devices
+            .filter((d) => d.adapter === adapter.id)
+            .sort((a, b) => b.connected - a.connected || (a.name || "").localeCompare(b.name || ""))
+        : [];
+
+      $("paired").replaceChildren(...devices.filter((d) => d.paired).map(row));
+      $("available").replaceChildren(...devices.filter((d) => !d.paired).map(row));
+    };
+
+    bt.onChange((s) => {
+      state = s;
+      render();
+    });
+
+    $("prompt-yes").onclick = () => answer(true);
+    $("prompt-no").onclick = () => answer(false);
+    $("prompt-input").onkeydown = (e) => {
+      if (e.key === "Enter") answer(true);
+      if (e.key === "Escape") answer(false);
+    };
+
+    $("power").onclick = () => adapter && run(adapter.id, () => bt.setPowered(adapter.id, !adapter.powered));
+    $("scan").onclick = () => adapter && run(adapter.id, () => bt.setDiscovering(adapter.id, !adapter.discovering));
+  </script>
+</body>
+</html>

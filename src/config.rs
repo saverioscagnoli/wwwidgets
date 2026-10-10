@@ -352,6 +352,9 @@ pub struct Config {
 
     #[serde(default)]
     pub audio: bool,
+
+    #[serde(default)]
+    pub bluetooth: bool,
 }
 
 impl Config {

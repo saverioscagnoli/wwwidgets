@@ -25,6 +25,7 @@ use webkit6::javascriptcore as jsc;
 use webkit6::prelude::WebViewExt;
 
 use crate::Shared;
+use crate::bluetooth;
 use crate::config::Anchor;
 use crate::config::Exclusivity;
 use crate::config::KeyboardMode;
@@ -135,6 +136,13 @@ enum Message {
     TrayMenuClick { id: String, item: i32 },
     AudioSetVolume { id: u32, volume: f64 },
     AudioSetMute { id: u32, muted: bool },
+    BluetoothPower { id: String, on: bool },
+    BluetoothDiscover { id: String, on: bool },
+    BluetoothConnect { id: String },
+    BluetoothDisconnect { id: String },
+    BluetoothPair { id: String },
+    BluetoothForget { id: String },
+    BluetoothRespond { accept: bool, value: Option<String> },
     #[serde(untagged)]
     Window(WindowMessage),
 }
@@ -445,6 +453,38 @@ pub fn setup(webview: &webkit6::WebView, shared: Rc<Shared>, monitor: gdk::Monit
                     .ok_or_else(|| "audio not available".to_string())
                     .and_then(|a| a.set_mute(id, muted));
 
+                util::reply_unit(&ctx, reply, res);
+            }
+            Ok(Message::BluetoothPower { id, on }) => {
+                let reply = reply.clone();
+                bluetooth::set_powered(&shared, &id, on, move |res| {
+                    util::reply_unit(&ctx, &reply, res)
+                });
+            }
+            Ok(Message::BluetoothDiscover { id, on }) => {
+                let reply = reply.clone();
+                bluetooth::set_discovering(&shared, &id, on, move |res| {
+                    util::reply_unit(&ctx, &reply, res)
+                });
+            }
+            Ok(Message::BluetoothConnect { id }) => {
+                let reply = reply.clone();
+                bluetooth::connect(&shared, &id, move |res| util::reply_unit(&ctx, &reply, res));
+            }
+            Ok(Message::BluetoothDisconnect { id }) => {
+                let reply = reply.clone();
+                bluetooth::disconnect(&shared, &id, move |res| util::reply_unit(&ctx, &reply, res));
+            }
+            Ok(Message::BluetoothPair { id }) => {
+                let reply = reply.clone();
+                bluetooth::pair(&shared, &id, move |res| util::reply_unit(&ctx, &reply, res));
+            }
+            Ok(Message::BluetoothForget { id }) => {
+                let reply = reply.clone();
+                bluetooth::forget(&shared, &id, move |res| util::reply_unit(&ctx, &reply, res));
+            }
+            Ok(Message::BluetoothRespond { accept, value }) => {
+                let res = bluetooth::respond(&shared, accept, value);
                 util::reply_unit(&ctx, reply, res);
             }
             Ok(Message::Window(wmsg)) => {

@@ -1,0 +1,15 @@
+{
+  "bluetooth": true,
+  "widgets": [
+    {
+      "path": "index.html",
+      "monitors": "all",
+      "width": 340,
+      "height": 420,
+      "anchor": "top-right",
+      "margin": { "top": 8, "right": 8 },
+      "layer": "overlay",
+      "transparent": true
+    }
+  ]
+}

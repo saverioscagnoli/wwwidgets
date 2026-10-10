@@ -123,5 +123,16 @@
       setVolume: (id, volume) => post({ cmd: "audiosetvolume", id, volume }),
       setMute: (id, muted) => post({ cmd: "audiosetmute", id, muted }),
     },
+    bluetooth: {
+      get: () => post({ cmd: "getstate", name: "bluetooth" }),
+      onChange: (fn) => window.wwwidgets.state.onChange("bluetooth", fn),
+      setPowered: (id, on) => post({ cmd: "bluetoothpower", id, on }),
+      setDiscovering: (id, on) => post({ cmd: "bluetoothdiscover", id, on }),
+      connect: (id) => post({ cmd: "bluetoothconnect", id }),
+      disconnect: (id) => post({ cmd: "bluetoothdisconnect", id }),
+      pair: (id) => post({ cmd: "bluetoothpair", id }),
+      forget: (id) => post({ cmd: "bluetoothforget", id }),
+      respond: (accept, value) => post({ cmd: "bluetoothrespond", accept, value }),
+    },
   };
 })();
