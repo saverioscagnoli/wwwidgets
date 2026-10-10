@@ -3,6 +3,7 @@ mod config;
 mod ext;
 mod navigation;
 mod notifications;
+mod reload;
 mod tray;
 mod util;
 mod workspaces;
@@ -217,6 +218,8 @@ fn spawn_window(
     );
 
     webview.load_uri(&uri);
+
+    reload::watch(&webview, &uri);
 
     let window = gtk4::ApplicationWindow::builder()
         .application(app)
