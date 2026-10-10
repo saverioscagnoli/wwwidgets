@@ -64,12 +64,9 @@
 
   <script type="module">
     const $ = (id) => document.getElementById(id);
-    const sink = "@DEFAULT_AUDIO_SINK@";
     let dnd = false;
-    let muted = false;
     let dragging = false;
-    let target = null;
-    let applying = false;
+    let sink;
 
     wwwidgets.window.hide();
 
@@ -77,10 +74,12 @@
       open ? wwwidgets.window.show() : wwwidgets.window.hide();
     });
 
-    wwwidgets.state.onChange("audio", (audio) => {
-      muted = audio.muted;
-      if (!dragging) $("slider").value = audio.volume;
-      $("mute").classList.toggle("on", muted);
+    wwwidgets.audio.onChange(({ default: id, sinks }) => {
+      sink = sinks.find((s) => s.id === id);
+      if (!sink) return;
+
+      if (!dragging) $("slider").value = Math.round(sink.volume * 100);
+      $("mute").classList.toggle("on", sink.muted);
     });
 
     wwwidgets.state.onChange("ui.dnd", (on) => {
@@ -94,29 +93,11 @@
       $("light").classList.toggle("on", theme === "light");
     });
 
-    const apply = async () => {
-      if (applying) return;
-      applying = true;
-
-      while (target !== null) {
-        const v = target;
-        target = null;
-        await wwwidgets.exec(["wpctl", "set-volume", sink, `${v / 100}`]);
-      }
-
-      applying = false;
-    };
-
     $("slider").onpointerdown = () => (dragging = true);
     window.addEventListener("pointerup", () => (dragging = false));
 
-    $("slider").oninput = () => {
-      target = Number($("slider").value);
-      wwwidgets.state.set("audio", { volume: target, muted });
-      apply();
-    };
-
-    $("mute").onclick = () => wwwidgets.exec(["wpctl", "set-mute", sink, "toggle"]);
+    $("slider").oninput = () => sink && wwwidgets.audio.setVolume(sink.id, $("slider").value / 100);
+    $("mute").onclick = () => sink && wwwidgets.audio.setMute(sink.id, !sink.muted);
     $("dnd").onclick = () => wwwidgets.state.set("ui.dnd", !dnd);
     $("dark").onclick = () => wwwidgets.state.set("ui.theme", "dark");
     $("light").onclick = () => wwwidgets.state.set("ui.theme", "light");

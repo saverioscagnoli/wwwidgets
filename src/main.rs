@@ -1,3 +1,4 @@
+mod audio;
 mod bridge;
 mod config;
 mod ext;
@@ -43,6 +44,7 @@ use traccia::info;
 
 use webkit6::prelude::WebViewExt;
 
+use crate::audio::Audio;
 use crate::config::Config;
 use crate::config::MonitorPreset;
 use crate::config::Monitors;
@@ -60,6 +62,7 @@ pub struct Shared {
     pub notifications: Notifications,
     pub workspaces: RefCell<Option<workspaces::ExtWorkspaces>>,
     pub tray: Tray,
+    pub audio: RefCell<Option<Audio>>,
 }
 
 impl Shared {
@@ -425,6 +428,10 @@ fn main() -> gtk4::glib::ExitCode {
 
                         if config.tray {
                             tray::serve(Rc::clone(&shared));
+                        }
+
+                        if config.audio {
+                            audio::serve(Rc::clone(&shared));
                         }
 
                         start(app, config, Rc::clone(&shared));

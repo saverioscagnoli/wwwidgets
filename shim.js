@@ -117,5 +117,11 @@
       menu: (id) => post({ cmd: "traymenu", id }),
       click: (id, item) => post({ cmd: "traymenuclick", id, item }),
     },
+    audio: {
+      get: () => post({ cmd: "getstate", name: "audio" }),
+      onChange: (fn) => window.wwwidgets.state.onChange("audio", fn),
+      setVolume: (id, volume) => post({ cmd: "audiosetvolume", id, volume }),
+      setMute: (id, muted) => post({ cmd: "audiosetmute", id, muted }),
+    },
   };
 })();

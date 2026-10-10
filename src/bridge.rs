@@ -133,6 +133,8 @@ enum Message {
     TrayScroll { id: String, delta: i32, horizontal: bool },
     TrayMenu { id: String },
     TrayMenuClick { id: String, item: i32 },
+    AudioSetVolume { id: u32, volume: f64 },
+    AudioSetMute { id: u32, muted: bool },
     #[serde(untagged)]
     Window(WindowMessage),
 }
@@ -423,6 +425,26 @@ pub fn setup(webview: &webkit6::WebView, shared: Rc<Shared>, monitor: gdk::Monit
             }
             Ok(Message::TrayMenuClick { id, item }) => {
                 let res = tray::menu_click(&shared, &id, item);
+                util::reply_unit(&ctx, reply, res);
+            }
+            Ok(Message::AudioSetVolume { id, volume }) => {
+                let res = shared
+                    .audio
+                    .borrow()
+                    .as_ref()
+                    .ok_or_else(|| "audio not available".to_string())
+                    .and_then(|a| a.set_volume(id, volume));
+
+                util::reply_unit(&ctx, reply, res);
+            }
+            Ok(Message::AudioSetMute { id, muted }) => {
+                let res = shared
+                    .audio
+                    .borrow()
+                    .as_ref()
+                    .ok_or_else(|| "audio not available".to_string())
+                    .and_then(|a| a.set_mute(id, muted));
+
                 util::reply_unit(&ctx, reply, res);
             }
             Ok(Message::Window(wmsg)) => {

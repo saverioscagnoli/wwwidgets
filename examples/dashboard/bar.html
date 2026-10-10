@@ -38,8 +38,8 @@
     const dnd = document.getElementById("dnd");
     const volume = document.getElementById("volume");
     const menu = document.getElementById("menu");
-    const sink = "@DEFAULT_AUDIO_SINK@";
     let open = false;
+    let sink;
 
     const tick = () => {
       clock.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -48,8 +48,11 @@
     tick();
     setInterval(tick, 1000);
 
-    wwwidgets.state.onChange("audio", ({ volume: v, muted }) => {
-      volume.textContent = muted ? "muted" : `vol ${v}%`;
+    wwwidgets.audio.onChange(({ default: id, sinks }) => {
+      sink = sinks.find((s) => s.id === id);
+
+      if (!sink) volume.textContent = "vol ?";
+      else volume.textContent = sink.muted ? "muted" : `vol ${Math.round(sink.volume * 100)}%`;
     });
 
     wwwidgets.state.onChange("ui.dnd", (on) => {
@@ -61,11 +64,13 @@
       menu.classList.toggle("on", v);
     });
 
-    volume.onclick = () => wwwidgets.exec(["wpctl", "set-mute", sink, "toggle"]);
+    volume.onclick = () => sink && wwwidgets.audio.setMute(sink.id, !sink.muted);
 
     volume.onwheel = (e) => {
-      const step = e.deltaY < 0 ? "5%+" : "5%-";
-      wwwidgets.exec(["wpctl", "set-volume", "-l", "1.0", sink, step]);
+      if (!sink) return;
+
+      const step = e.deltaY < 0 ? 0.05 : -0.05;
+      wwwidgets.audio.setVolume(sink.id, Math.min(Math.max(sink.volume + step, 0), 1));
     };
 
     menu.onclick = () => wwwidgets.state.set("control.open", !open);

@@ -349,6 +349,9 @@ pub struct Config {
 
     #[serde(default)]
     pub tray: bool,
+
+    #[serde(default)]
+    pub audio: bool,
 }
 
 impl Config {

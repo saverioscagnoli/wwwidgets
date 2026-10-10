@@ -65,13 +65,19 @@
       dnd = on;
     });
 
-    wwwidgets.state.onChange("audio", (audio) => {
-      const changed = last && (last.volume !== audio.volume || last.muted !== audio.muted);
-      last = audio;
+    wwwidgets.audio.onChange(({ default: id, sinks }) => {
+      const sink = sinks.find((s) => s.id === id);
+      if (!sink) return;
 
-      fill.style.width = `${Math.min(audio.volume, 100)}%`;
-      fill.classList.toggle("muted", audio.muted);
-      label.textContent = audio.muted ? "muted" : `${audio.volume}%`;
+      const volume = Math.round(sink.volume * 100);
+      // switching output device isn't a volume change
+      const changed =
+        last && last.id === sink.id && (last.volume !== volume || last.muted !== sink.muted);
+      last = { id: sink.id, volume, muted: sink.muted };
+
+      fill.style.width = `${Math.min(volume, 100)}%`;
+      fill.classList.toggle("muted", sink.muted);
+      label.textContent = sink.muted ? "muted" : `${volume}%`;
 
       if (!changed || dnd) return;
 

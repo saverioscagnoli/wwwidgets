@@ -1,14 +1,6 @@
 {
+  "audio": true,
   "widgets": [
-    {
-      "path": "audio.html",
-      "monitors": "all",
-      "width": 1,
-      "height": 1,
-      "layer": "background",
-      "click-through": true,
-      "transparent": true
-    },
     {
       "path": "bar.html",
       "monitors": "all",
