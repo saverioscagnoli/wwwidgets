@@ -3,6 +3,7 @@ mod config;
 mod ext;
 mod navigation;
 mod notifications;
+mod tray;
 mod util;
 mod workspaces;
 
@@ -47,6 +48,7 @@ use crate::config::Monitors;
 use crate::config::WidgetConfig;
 use crate::ext::LayerWindowExt;
 use crate::notifications::Notifications;
+use crate::tray::Tray;
 
 const APP_ID: &str = "dev.svscagn.wwwidgets";
 
@@ -56,6 +58,7 @@ pub struct Shared {
     pub views: RefCell<Vec<glib::WeakRef<webkit6::WebView>>>,
     pub notifications: Notifications,
     pub workspaces: RefCell<Option<workspaces::ExtWorkspaces>>,
+    pub tray: Tray,
 }
 
 impl Shared {
@@ -326,6 +329,7 @@ fn start(app: &gtk4::Application, config: Config, shared: Rc<Shared>) {
     if let Some(settings) = first.settings() {
         debug!("Devtools: {}", config.devtools);
         settings.set_enable_developer_extras(config.devtools);
+        settings.set_allow_file_access_from_file_urls(true);
     }
 
     for widget in &config.widgets {
@@ -414,6 +418,10 @@ fn main() -> gtk4::glib::ExitCode {
 
                         if config.workspaces {
                             workspaces::serve(Rc::clone(&shared));
+                        }
+
+                        if config.tray {
+                            tray::serve(Rc::clone(&shared));
                         }
 
                         start(app, config, Rc::clone(&shared));

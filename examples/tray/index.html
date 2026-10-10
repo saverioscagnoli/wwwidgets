@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>tray</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      height: 100vh;
+      background: transparent;
+      overflow: hidden;
+    }
+
+    body {
+      font: 13px monospace;
+      color: #cdd6f4;
+      user-select: none;
+    }
+
+    #bar {
+      height: 36px;
+      padding: 0 8px;
+      background: #1e1e2e;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #empty {
+      color: #7f849c;
+    }
+
+    #tray {
+      margin-left: auto;
+      display: flex;
+      gap: 2px;
+    }
+
+    .item {
+      width: 28px;
+      height: 28px;
+      padding: 4px;
+      font: inherit;
+      font-weight: bold;
+      color: inherit;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 120ms;
+    }
+
+    .item:hover,
+    .item.open {
+      background: #313244;
+    }
+
+    .item img {
+      width: 20px;
+      height: 20px;
+      object-fit: contain;
+    }
+
+    .item.attention {
+      animation: pulse 1s ease-in-out infinite alternate;
+    }
+
+    @keyframes pulse {
+      to {
+        background: #f38ba855;
+      }
+    }
+
+    .menu {
+      position: absolute;
+      min-width: 180px;
+      max-width: 320px;
+      padding: 4px;
+      background: #1e1e2e;
+      border: 1px solid #313244;
+      border-radius: 8px;
+      box-shadow: 0 6px 18px #0006;
+    }
+
+    .menu .menu {
+      display: none;
+      top: -5px;
+      right: calc(100% + 4px);
+    }
+
+    .entry {
+      position: relative;
+      height: 28px;
+      padding: 0 8px;
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .entry:hover {
+      background: #313244;
+    }
+
+    .entry.parent:hover > .menu {
+      display: block;
+    }
+
+    .entry.disabled {
+      color: #6c7086;
+      cursor: default;
+    }
+
+    .entry.disabled:hover {
+      background: transparent;
+    }
+
+    .mark {
+      width: 14px;
+      color: #89b4fa;
+      text-align: center;
+    }
+
+    .label {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .arrow {
+      color: #7f849c;
+    }
+
+    .sep {
+      height: 1px;
+      margin: 4px 6px;
+      background: #313244;
+    }
+  </style>
+</head>
+<body>
+  <div id="bar" class="hit">
+    <span id="empty">no tray items</span>
+    <div id="tray"></div>
+  </div>
+  <div id="menus"></div>
+
+  <script type="module">
+    const tray = document.getElementById("tray");
+    const empty = document.getElementById("empty");
+    const menus = document.getElementById("menus");
+
+    let open = null;
+    let closeTimer = null;
+
+    wwwidgets.window.inputRegionFrom(".hit");
+
+    const markFor = (node) => {
+      if (node.toggleType === "checkmark") return node.toggleState === 1 ? "✓" : "";
+      if (node.toggleType === "radio") return node.toggleState === 1 ? "●" : "○";
+      return "";
+    };
+
+    const closeMenu = () => {
+      clearTimeout(closeTimer);
+      menus.replaceChildren();
+      open = null;
+      tray.querySelectorAll(".open").forEach((el) => el.classList.remove("open"));
+    };
+
+    const buildMenu = (id, nodes) => {
+      const menu = document.createElement("div");
+      menu.className = "menu hit";
+
+      for (const node of nodes) {
+        if (node.type === "separator") {
+          const sep = document.createElement("div");
+          sep.className = "sep";
+          menu.append(sep);
+          continue;
+        }
+
+        const entry = document.createElement("div");
+        entry.className = "entry";
+        entry.classList.toggle("disabled", !node.enabled);
+
+        const mark = document.createElement("span");
+        mark.className = "mark";
+        mark.textContent = markFor(node);
+
+        const label = document.createElement("span");
+        label.className = "label";
+        label.textContent = node.label;
+
+        entry.append(mark, label);
+
+        if (node.children.length > 0) {
+          const arrow = document.createElement("span");
+          arrow.className = "arrow";
+          arrow.textContent = "‹";
+          entry.classList.add("parent");
+          entry.append(arrow, buildMenu(id, node.children));
+        } else if (node.enabled) {
+          entry.addEventListener("click", (e) => {
+            e.stopPropagation();
+            wwwidgets.tray.click(id, node.id);
+            closeMenu();
+          });
+        }
+
+        menu.append(entry);
+      }
+
+      return menu;
+    };
+
+    const openMenu = async (item, button) => {
+      if (open === item.id) {
+        closeMenu();
+        return;
+      }
+
+      let root;
+
+      try {
+        root = await wwwidgets.tray.menu(item.id);
+      } catch {
+        wwwidgets.tray.contextMenu(item.id);
+        return;
+      }
+
+      if (root.children.length === 0) {
+        wwwidgets.tray.contextMenu(item.id);
+        return;
+      }
+
+      closeMenu();
+
+      const menu = buildMenu(item.id, root.children);
+      const rect = button.getBoundingClientRect();
+
+      menu.style.top = `${rect.bottom + 10}px`;
+      menu.style.right = `${Math.max(4, window.innerWidth - rect.right - 4)}px`;
+      menu.addEventListener("mouseleave", () => {
+        closeTimer = setTimeout(closeMenu, 600);
+      });
+      menu.addEventListener("mouseenter", () => clearTimeout(closeTimer));
+
+      menus.append(menu);
+      button.classList.add("open");
+      open = item.id;
+    };
+
+    const renderItem = (item) => {
+      const button = document.createElement("button");
+      const attention = item.status === "NeedsAttention";
+      const src = (attention && item.attentionIcon) || item.icon;
+
+      button.className = "item";
+      button.title = item.tooltip ?? item.title;
+      button.classList.toggle("attention", attention);
+      button.classList.toggle("open", open === item.id);
+
+      if (src) {
+        const img = document.createElement("img");
+        img.src = src;
+        img.alt = item.title;
+        button.append(img);
+      } else {
+        button.textContent = (item.title || "?").charAt(0).toUpperCase();
+      }
+
+      button.addEventListener("click", () => {
+        if (item.itemIsMenu && item.hasMenu) openMenu(item, button);
+        else wwwidgets.tray.activate(item.id);
+      });
+
+      button.addEventListener("auxclick", (e) => {
+        if (e.button === 1) wwwidgets.tray.secondary(item.id);
+      });
+
+      button.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        if (item.hasMenu) openMenu(item, button);
+        else wwwidgets.tray.contextMenu(item.id);
+      });
+
+      button.addEventListener("wheel", (e) => {
+        if (e.deltaY !== 0) wwwidgets.tray.scroll(item.id, Math.sign(e.deltaY));
+        if (e.deltaX !== 0) wwwidgets.tray.scroll(item.id, Math.sign(e.deltaX), true);
+      });
+
+      return button;
+    };
+
+    wwwidgets.tray.onChange((items) => {
+      const visible = items.filter((i) => i.status !== "Passive");
+
+      empty.hidden = visible.length > 0;
+      tray.replaceChildren(...visible.map(renderItem));
+
+      if (open && !visible.some((i) => i.id === open)) closeMenu();
+    });
+  </script>
+</body>
+</html>

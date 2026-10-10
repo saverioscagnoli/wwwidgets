@@ -107,5 +107,15 @@
       onChange: (fn) => window.wwwidgets.state.onChange("workspaces", fn),
       activate: (id) => post({ cmd: "activateworkspace", id }),
     },
+    tray: {
+      list: () => post({ cmd: "getstate", name: "tray" }),
+      onChange: (fn) => window.wwwidgets.state.onChange("tray", fn),
+      activate: (id) => post({ cmd: "trayactivate", id }),
+      secondary: (id) => post({ cmd: "traysecondary", id }),
+      contextMenu: (id) => post({ cmd: "traycontext", id }),
+      scroll: (id, delta, horizontal = false) => post({ cmd: "trayscroll", id, delta, horizontal }),
+      menu: (id) => post({ cmd: "traymenu", id }),
+      click: (id, item) => post({ cmd: "traymenuclick", id, item }),
+    },
   };
 })();

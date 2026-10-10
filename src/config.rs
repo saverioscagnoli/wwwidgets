@@ -344,17 +344,16 @@ pub struct Config {
     #[serde(default)]
     pub notifications: bool,
 
-    #[serde(default = "Config::default_workspaces")]
+    #[serde(default)]
     pub workspaces: bool,
+
+    #[serde(default)]
+    pub tray: bool,
 }
 
 impl Config {
     const fn default_devtools() -> bool {
         cfg!(debug_assertions)
-    }
-
-    const fn default_workspaces() -> bool {
-        true
     }
 
     pub fn parse(path: Option<&PathBuf>) -> Result<Self, String> {

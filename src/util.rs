@@ -37,3 +37,14 @@ where
         Err(e) => reply.return_error_message(&e.to_string()),
     }
 }
+
+pub fn reply_unit(
+    ctx: &jsc::Context,
+    reply: &webkit6::ScriptMessageReply,
+    res: Result<(), String>,
+) {
+    match res {
+        Ok(()) => reply.return_value(&jsc::Value::new_undefined(ctx)),
+        Err(e) => reply.return_error_message(&e),
+    }
+}

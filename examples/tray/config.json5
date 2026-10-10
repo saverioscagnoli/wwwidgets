@@ -1,0 +1,15 @@
+{
+  "tray": true,
+  "widgets": [
+    {
+      "path": "index.html",
+      "monitors": "all",
+      "width": "99%",
+      "height": 360,
+      "anchor": "top",
+      "margin": { "top": 6 },
+      "exclusive": 36,
+      "transparent": true
+    }
+  ]
+}

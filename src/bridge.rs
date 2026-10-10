@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::rc::Rc;
 
+use gio::glib::variant::ToVariant;
 use gtk4::gdk;
 use gtk4::gdk::prelude::MonitorExt;
 use gtk4::gio;
@@ -32,6 +33,7 @@ use crate::config::Margin;
 use crate::ext::LayerWindowExt;
 use crate::ext::Rect;
 use crate::notifications;
+use crate::tray;
 use crate::util;
 
 const SHIM: &str = include_str!("../shim.js");
@@ -125,6 +127,12 @@ enum Message {
     Dismiss { id: u32 },
     Invoke { id: u32, action: String },
     ActivateWorkspace { id: String },
+    TrayActivate { id: String },
+    TraySecondary { id: String },
+    TrayContext { id: String },
+    TrayScroll { id: String, delta: i32, horizontal: bool },
+    TrayMenu { id: String },
+    TrayMenuClick { id: String, item: i32 },
     #[serde(untagged)]
     Window(WindowMessage),
 }
@@ -382,6 +390,40 @@ pub fn setup(webview: &webkit6::WebView, shared: Rc<Shared>, monitor: gdk::Monit
                     Ok(()) => reply.return_value(&jsc::Value::new_undefined(&ctx)),
                     Err(e) => reply.return_error_message(&format!("activateworkspace: {e}")),
                 }
+            }
+            Ok(Message::TrayActivate { id }) => {
+                let res = tray::activate(&shared, &id, "Activate", (0i32, 0i32).to_variant());
+                util::reply_unit(&ctx, reply, res);
+            }
+            Ok(Message::TraySecondary { id }) => {
+                let res =
+                    tray::activate(&shared, &id, "SecondaryActivate", (0i32, 0i32).to_variant());
+                util::reply_unit(&ctx, reply, res);
+            }
+            Ok(Message::TrayContext { id }) => {
+                let res = tray::activate(&shared, &id, "ContextMenu", (0i32, 0i32).to_variant());
+                util::reply_unit(&ctx, reply, res);
+            }
+            Ok(Message::TrayScroll {
+                id,
+                delta,
+                horizontal,
+            }) => {
+                let orientation = if horizontal { "horizontal" } else { "vertical" };
+                let res = tray::activate(&shared, &id, "Scroll", (delta, orientation).to_variant());
+                util::reply_unit(&ctx, reply, res);
+            }
+            Ok(Message::TrayMenu { id }) => {
+                let reply = reply.clone();
+
+                tray::menu(&shared, &id, move |res| match res {
+                    Ok(layout) => util::reply_json(&ctx, &reply, &layout),
+                    Err(e) => reply.return_error_message(&format!("traymenu: {e}")),
+                });
+            }
+            Ok(Message::TrayMenuClick { id, item }) => {
+                let res = tray::menu_click(&shared, &id, item);
+                util::reply_unit(&ctx, reply, res);
             }
             Ok(Message::Window(wmsg)) => {
                 let Some(window) = weak
