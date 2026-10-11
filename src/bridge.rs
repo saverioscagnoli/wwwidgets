@@ -33,6 +33,7 @@ use crate::config::Layer;
 use crate::config::Margin;
 use crate::ext::LayerWindowExt;
 use crate::ext::Rect;
+use crate::network;
 use crate::notifications;
 use crate::tray;
 use crate::util;
@@ -143,6 +144,11 @@ enum Message {
     BluetoothPair { id: String },
     BluetoothForget { id: String },
     BluetoothRespond { accept: bool, value: Option<String> },
+    NetworkWifi { on: bool },
+    NetworkScan,
+    NetworkConnect { id: String, password: Option<String> },
+    NetworkDisconnect { id: String },
+    NetworkForget { ssid: String },
     #[serde(untagged)]
     Window(WindowMessage),
 }
@@ -486,6 +492,32 @@ pub fn setup(webview: &webkit6::WebView, shared: Rc<Shared>, monitor: gdk::Monit
             Ok(Message::BluetoothRespond { accept, value }) => {
                 let res = bluetooth::respond(&shared, accept, value);
                 util::reply_unit(&ctx, reply, res);
+            }
+            Ok(Message::NetworkWifi { on }) => {
+                let reply = reply.clone();
+                network::set_wifi_enabled(&shared, on, move |res| {
+                    util::reply_unit(&ctx, &reply, res)
+                });
+            }
+            Ok(Message::NetworkScan) => {
+                let reply = reply.clone();
+                network::scan(&shared, move |res| util::reply_unit(&ctx, &reply, res));
+            }
+            Ok(Message::NetworkConnect { id, password }) => {
+                let reply = reply.clone();
+                network::connect(&shared, &id, password, move |res| {
+                    util::reply_unit(&ctx, &reply, res)
+                });
+            }
+            Ok(Message::NetworkDisconnect { id }) => {
+                let reply = reply.clone();
+                network::disconnect(&shared, &id, move |res| util::reply_unit(&ctx, &reply, res));
+            }
+            Ok(Message::NetworkForget { ssid }) => {
+                let reply = reply.clone();
+                network::forget(&shared, &ssid, move |res| {
+                    util::reply_unit(&ctx, &reply, res)
+                });
             }
             Ok(Message::Window(wmsg)) => {
                 let Some(window) = weak

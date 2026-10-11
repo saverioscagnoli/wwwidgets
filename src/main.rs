@@ -1,9 +1,11 @@
 mod audio;
+mod battery;
 mod bluetooth;
 mod bridge;
 mod config;
 mod ext;
 mod navigation;
+mod network;
 mod notifications;
 mod reload;
 mod tray;
@@ -46,12 +48,14 @@ use traccia::info;
 use webkit6::prelude::WebViewExt;
 
 use crate::audio::Audio;
+use crate::battery::Battery;
 use crate::bluetooth::Bluetooth;
 use crate::config::Config;
 use crate::config::MonitorPreset;
 use crate::config::Monitors;
 use crate::config::WidgetConfig;
 use crate::ext::LayerWindowExt;
+use crate::network::Network;
 use crate::notifications::Notifications;
 use crate::tray::Tray;
 
@@ -66,6 +70,8 @@ pub struct Shared {
     pub tray: Tray,
     pub audio: RefCell<Option<Audio>>,
     pub bluetooth: Bluetooth,
+    pub battery: Battery,
+    pub network: Network,
 }
 
 impl Shared {
@@ -377,7 +383,24 @@ fn start(app: &gtk4::Application, config: Config, shared: Rc<Shared>) {
         });
 }
 
+// GTK hands WebKit's buffers to the compositor as subsurfaces ("graphics offload").
+// When a page settles after an animation it can flip in and out of offload, and on
+// wlroots compositors that shows up as a one-frame black flash. Widgets are small
+// enough that letting GTK composite them itself costs nothing noticeable.
+fn disable_graphics_offload() {
+    let value = match std::env::var("GDK_DISABLE") {
+        Ok(v) if v.split(',').any(|f| f.trim() == "offload") => return,
+        Ok(v) if !v.is_empty() => format!("{v},offload"),
+        _ => String::from("offload"),
+    };
+
+    // SAFETY: called first thing in main, before GTK or any other thread is started.
+    unsafe { std::env::set_var("GDK_DISABLE", value) };
+}
+
 fn main() -> gtk4::glib::ExitCode {
+    disable_graphics_offload();
+
     let _ = traccia::init(
         traccia::Config::default()
             .with_min_level(if cfg!(debug_assertions) {
@@ -439,6 +462,14 @@ fn main() -> gtk4::glib::ExitCode {
 
                         if config.bluetooth {
                             bluetooth::serve(Rc::clone(&shared));
+                        }
+
+                        if config.battery {
+                            battery::serve(Rc::clone(&shared));
+                        }
+
+                        if config.network {
+                            network::serve(Rc::clone(&shared));
                         }
 
                         start(app, config, Rc::clone(&shared));

@@ -355,6 +355,12 @@ pub struct Config {
 
     #[serde(default)]
     pub bluetooth: bool,
+
+    #[serde(default)]
+    pub battery: bool,
+
+    #[serde(default)]
+    pub network: bool,
 }
 
 impl Config {

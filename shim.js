@@ -134,5 +134,18 @@
       forget: (id) => post({ cmd: "bluetoothforget", id }),
       respond: (accept, value) => post({ cmd: "bluetoothrespond", accept, value }),
     },
+    network: {
+      get: () => post({ cmd: "getstate", name: "network" }),
+      onChange: (fn) => window.wwwidgets.state.onChange("network", fn),
+      setWifiEnabled: (on) => post({ cmd: "networkwifi", on }),
+      scan: () => post({ cmd: "networkscan" }),
+      connect: (id, password) => post({ cmd: "networkconnect", id, password }),
+      disconnect: (id) => post({ cmd: "networkdisconnect", id }),
+      forget: (ssid) => post({ cmd: "networkforget", ssid }),
+    },
+    battery: {
+      get: () => post({ cmd: "getstate", name: "battery" }),
+      onChange: (fn) => window.wwwidgets.state.onChange("battery", fn),
+    },
   };
 })();

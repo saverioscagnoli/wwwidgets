@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>caelestia</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600&display=block">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Closes modal drawers when clicking anywhere else. Only part of the input region while one is open. -->
+  <div id="backdrop"></div>
+
+  <div id="surfaces">
+    <div id="frame"><div id="hole"></div></div>
+
+    <!-- Bar popouts: audio, network, bluetooth, battery, tray menus -->
+    <div class="drawer left" id="popout"><div class="sheet"><div class="content" id="popout-content"></div></div></div>
+
+    <div class="drawer top" id="dashboard">
+      <div class="sheet">
+        <div class="content">
+          <nav class="tabs" id="dash-tabs">
+            <button data-tab="home" class="active"><span class="icon">dashboard</span>Dashboard</button>
+            <button data-tab="media"><span class="icon">queue_music</span>Media</button>
+            <button data-tab="perf"><span class="icon">speed</span>Performance</button>
+            <div class="tab-indicator"></div>
+          </nav>
+
+          <section class="tab" data-tab="home">
+            <div class="card user">
+              <div class="avatar icon">person</div>
+              <div>
+                <div class="user-name" id="dash-user"></div>
+                <div class="muted"><span class="icon small">timer</span> <span id="dash-uptime"></span></div>
+                <div class="muted"><span class="icon small">desktop_windows</span> <span id="dash-host"></span></div>
+              </div>
+            </div>
+            <div class="card clock">
+              <div class="big-time" id="dash-time"></div>
+              <div class="muted" id="dash-date"></div>
+            </div>
+            <div class="card calendar" id="dash-calendar"></div>
+            <div class="card mini-media" id="dash-mini-media"></div>
+            <div class="card resources" id="dash-resources"></div>
+          </section>
+
+          <section class="tab" data-tab="media" hidden>
+            <div class="media" id="dash-media"></div>
+          </section>
+
+          <section class="tab" data-tab="perf" hidden>
+            <div class="perf" id="dash-perf"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div class="drawer bottom" id="launcher">
+      <div class="sheet">
+        <div class="content">
+          <ul class="results" id="launcher-results"></ul>
+          <label class="search">
+            <span class="icon">search</span>
+            <input id="launcher-input" placeholder="Type &quot;&gt;&quot; for commands, &quot;=&quot; to calculate" autocomplete="off" spellcheck="false">
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="drawer right" id="session">
+      <div class="sheet">
+        <div class="content">
+          <button data-action="lock"><span class="icon">lock</span></button>
+          <button data-action="logout"><span class="icon">logout</span></button>
+          <button data-action="suspend"><span class="icon">bedtime</span></button>
+          <button data-action="reboot"><span class="icon">cached</span></button>
+          <button data-action="shutdown" class="danger"><span class="icon">power_settings_new</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="drawer right" id="osd">
+      <div class="sheet">
+        <div class="content">
+          <div class="vslider" id="osd-volume"><div class="fill"></div><span class="icon">volume_up</span></div>
+          <div class="vslider" id="osd-brightness"><div class="fill"></div><span class="icon">brightness_6</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="drawer top corner" id="notifications">
+      <div class="sheet"><div class="content" id="notif-list"></div></div>
+    </div>
+  </div>
+
+  <!-- Hover/click targets on the frame edges; always part of the input region. -->
+  <div class="edge hit" id="edge-top"><div id="dash-trigger"></div></div>
+  <div class="edge hit" id="edge-right"><div id="osd-trigger"></div></div>
+  <div class="edge hit" id="edge-bottom"></div>
+
+  <aside id="bar" class="hit">
+    <button class="logo" id="bar-logo" title="Launcher"><span class="icon fill">blur_on</span></button>
+
+    <div class="workspaces" id="bar-workspaces"><div class="ws-indicator"></div></div>
+
+    <div class="spacer"></div>
+
+    <div class="tray" id="bar-tray"></div>
+
+    <div class="clock" id="bar-clock"></div>
+
+    <div class="status" id="bar-status">
+      <span class="icon" data-popout="audio" id="st-audio">volume_up</span>
+      <span class="icon" data-popout="network" id="st-network">wifi_off</span>
+      <span class="icon" data-popout="bluetooth" id="st-bluetooth">bluetooth_disabled</span>
+      <span class="icon" data-popout="battery" id="st-battery" hidden>battery_full</span>
+    </div>
+
+    <button class="power" id="bar-power" title="Session"><span class="icon">power_settings_new</span></button>
+  </aside>
+
+  <script src="shell.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "battery": true,
+  "widgets": [
+    {
+      "path": "index.html",
+      "monitors": "all",
+      "width": 300,
+      "height": 150,
+      "anchor": "top-right",
+      "margin": { "top": 8, "right": 8 },
+      "layer": "overlay",
+      "click-through": true,
+      "transparent": true
+    }
+  ]
+}
