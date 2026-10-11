@@ -4,7 +4,7 @@ PKGS    := gtk4-layer-shell-0 gtk4 webkitgtk-6.0 json-glib-1.0
 CFLAGS  += -MMD -MP -Wall -Wextra -DG_LOG_DOMAIN=\"wwwidgets\" -DG_LOG_USE_STRUCTURED $(shell pkg-config --cflags $(PKGS))
 LDLIBS  += $(shell pkg-config --libs $(PKGS))
 
-TARGET  := app
+TARGET  := wwwidgets
 SRC     := $(wildcard src/*.c)
 OBJ     := $(SRC:src/%.c=build/%.o) build/resources.o
 

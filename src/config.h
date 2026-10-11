@@ -1,11 +1,19 @@
 #pragma once
 
+#include "gtk4-layer-shell.h"
 #include <glib.h>
+
 
 typedef struct {
     gdouble value;
     gboolean is_percent;
 } Size;
+
+typedef enum {
+    EXCLUSIVE_NONE,
+    EXCLUSIVE_AUTO,
+    EXCLUSIVE_FIXED,
+} ExclusiveMode;
 
 typedef struct {
     gchar *path;
@@ -14,6 +22,10 @@ typedef struct {
     GStrv monitors;
     Size width;
     Size height;
+    GtkLayerShellLayer layer;
+    gboolean anchor[GTK_LAYER_SHELL_EDGE_ENTRY_NUMBER];
+    ExclusiveMode exclusive;
+    int exclusive_px;
 } WidgetConfig;
 
 static inline void widget_config_free(WidgetConfig *w) {

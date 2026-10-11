@@ -1,10 +1,15 @@
 #include "config.h"
 #include "glib-object.h"
 #include "glibconfig.h"
+#include "gtk4-layer-shell.h"
 #include <glib.h>
 #include <json-glib/json-glib.h>
 
 #define BOOL_STR(b) ((b) ? "enabled" : "disabled")
+
+static gboolean node_is_string(JsonNode *node) {
+    return JSON_NODE_HOLDS_VALUE(node) && json_node_get_value_type(node) == G_TYPE_STRING;
+}
 
 static gchar *resolve_path(const gchar *config_path, const gchar *path, GError **error) {
     g_autofree gchar *expanded = NULL;
@@ -111,6 +116,115 @@ static gboolean parse_size(JsonObject *obj, const gchar *key, Size fallback, Siz
     return TRUE;
 }
 
+static gboolean parse_layer(JsonObject *obj, const gchar *key, GtkLayerShellLayer *out, GError **error) {
+    *out = GTK_LAYER_SHELL_LAYER_TOP;
+
+    if (!json_object_has_member(obj, key))
+        return TRUE;
+
+    JsonNode *node = json_object_get_member(obj, key);
+    const gchar *s = node_is_string(node) ? json_node_get_string(node) : "";
+
+    if (g_str_equal(s, "background"))   *out = GTK_LAYER_SHELL_LAYER_BACKGROUND;
+    else if (g_str_equal(s, "bottom"))  *out = GTK_LAYER_SHELL_LAYER_BOTTOM;
+    else if (g_str_equal(s, "top"))     *out = GTK_LAYER_SHELL_LAYER_TOP;
+    else if (g_str_equal(s, "overlay")) *out = GTK_LAYER_SHELL_LAYER_OVERLAY;
+    else {
+        g_set_error(error, JSON_PARSER_ERROR, JSON_PARSER_ERROR_INVALID_DATA, "\"%s\": expected \"background\", \"bottom\", \"top\" or \"overlay\"", key);
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static gboolean parse_anchor_string(const gchar *key, const gchar *s, gboolean anchor[], GError **error) {
+    if (g_str_equal(s, "center"))
+        return TRUE;
+
+    if (g_str_equal(s, "fill")) {
+        for (int e = 0; e < GTK_LAYER_SHELL_EDGE_ENTRY_NUMBER; e++) {
+            anchor[e] = TRUE;
+        }
+
+        return TRUE;
+    }
+
+    g_auto(GStrv) parts = g_strsplit(s, "-", -1);
+
+    for (gchar **p = parts; *p != NULL; p++) {
+        if (g_str_equal(*p, "top"))         anchor[GTK_LAYER_SHELL_EDGE_TOP] = TRUE;
+        else if (g_str_equal(*p, "bottom")) anchor[GTK_LAYER_SHELL_EDGE_BOTTOM] = TRUE;
+        else if (g_str_equal(*p, "left"))   anchor[GTK_LAYER_SHELL_EDGE_LEFT] = TRUE;
+        else if (g_str_equal(*p, "right"))  anchor[GTK_LAYER_SHELL_EDGE_RIGHT] = TRUE;
+        else {
+            g_set_error(error, JSON_PARSER_ERROR, JSON_PARSER_ERROR_INVALID_DATA, "\"%s\": unknown edge \"%s\" (use top, bottom, left, right, center, fill)", key, *p);
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+static gboolean parse_anchor(JsonObject *obj, const gchar *key, gboolean anchor[], GError **error) {
+    for (int e = 0; e < GTK_LAYER_SHELL_EDGE_ENTRY_NUMBER; e++) {
+        anchor[e] = FALSE;
+    }
+
+    if (!json_object_has_member(obj, key))
+        return TRUE;
+
+    JsonNode *node = json_object_get_member(obj, key);
+
+    if (node_is_string(node))
+        return parse_anchor_string(key, json_node_get_string(node), anchor, error);
+
+    if (JSON_NODE_HOLDS_ARRAY(node)) {
+        JsonArray *array = json_node_get_array(node);
+
+        for (guint i = 0; i < json_array_get_length(array); i++) {
+            JsonNode *item = json_array_get_element(array, i);
+
+            if (!node_is_string(item)) {
+                g_set_error(error, JSON_PARSER_ERROR, JSON_PARSER_ERROR_INVALID_DATA, "\"%s\"[%u]: expected an edge name", key, i);
+                return FALSE;
+            }
+
+            if (!parse_anchor_string(key, json_node_get_string(item), anchor, error))
+                return FALSE;
+        }
+
+        return TRUE;
+    }
+
+    g_set_error(error, JSON_PARSER_ERROR, JSON_PARSER_ERROR_INVALID_DATA, "\"%s\": expected an edge name or a list of edges", key);
+    return FALSE;
+}
+
+static gboolean parse_exclusive(JsonObject *obj, const gchar *key, ExclusiveMode *mode, int *px, GError **error) {
+    *mode = EXCLUSIVE_NONE;
+    *px = 0;
+
+    if (!json_object_has_member(obj, key))
+        return TRUE;
+
+    JsonNode *node = json_object_get_member(obj, key);
+    GType type = JSON_NODE_HOLDS_VALUE(node) ? json_node_get_value_type(node) : G_TYPE_INVALID;
+
+    if (type == G_TYPE_BOOLEAN) {
+        *mode = json_node_get_boolean(node) ? EXCLUSIVE_AUTO : EXCLUSIVE_NONE;
+        return TRUE;
+    }
+
+    if (type == G_TYPE_INT64 && json_node_get_int(node) >= 0) {
+        *mode = EXCLUSIVE_FIXED;
+        *px = (int)json_node_get_int(node);
+        return TRUE;
+    }
+
+    g_set_error(error, JSON_PARSER_ERROR, JSON_PARSER_ERROR_INVALID_DATA, "\"%s\": expected true, false or a number of pixels", key);
+    return FALSE;
+}
+
 void config_parse(Config *config, const gchar *path) {
     g_autoptr(GError) error = NULL;
     g_autoptr(JsonParser) parser = json_parser_new();
@@ -174,7 +288,10 @@ void config_parse(Config *config, const gchar *path) {
 
             if (!parse_size(obj, "width", fallback, &w->width, &widget_error) ||
                 !parse_size(obj, "height", fallback, &w->height, &widget_error) ||
-                !parse_monitors(obj, "monitors", w, &widget_error)
+                !parse_monitors(obj, "monitors", w, &widget_error) ||
+                !parse_layer(obj, "layer", &w->layer, &widget_error) ||
+                !parse_anchor(obj, "anchor", w->anchor, &widget_error) ||
+                !parse_exclusive(obj, "exclusive", &w->exclusive, &w->exclusive_px, &widget_error)
             ) {
                 g_warning("widgets[%u]: %s, skipping", i, widget_error->message);
                 widget_config_free(w);
@@ -189,5 +306,5 @@ void config_parse(Config *config, const gchar *path) {
         g_error("couldn't find any widgets");
     }
 
-    g_info("found and parsed %u widgets", config->widgets->len);
+    g_info("found and parsed %u widget(s)", config->widgets->len);
 }

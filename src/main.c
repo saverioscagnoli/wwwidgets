@@ -7,32 +7,11 @@
 #include <gio/gio.h>
 
 #include "config.h"
+#include "glibconfig.h"
+#include "gtk/gtkshortcut.h"
 #include "log.h"
 #include "state.h"
-
-/* Serves app://<path> from the GResource bundle compiled into the binary. */
-static void on_app_scheme(WebKitURISchemeRequest *request, gpointer user_data) {
-    (void)user_data;
-
-    const char *path = webkit_uri_scheme_request_get_path(request);
-    if (path == NULL || *path == '\0' || g_str_equal(path, "/"))
-        path = "/index.html";
-
-    g_autofree char *resource = g_strconcat("/app/web", path, NULL);
-
-    g_autoptr(GError) error = NULL;
-    g_autoptr(GBytes) bytes = g_resources_lookup_data(resource, G_RESOURCE_LOOKUP_FLAGS_NONE, &error);
-
-    if (bytes == NULL) {
-        webkit_uri_scheme_request_finish_error(request, error);
-        return;
-    }
-
-    g_autofree char *content_type = g_content_type_guess(path, NULL, 0, NULL);
-    g_autofree char *mime = g_content_type_get_mime_type(content_type);
-    g_autoptr(GInputStream) stream = g_memory_input_stream_new_from_bytes(bytes);
-    webkit_uri_scheme_request_finish(request, stream, g_bytes_get_size(bytes), mime);
-}
+#include "webkit/WebKitSettings.h"
 
 /* JS: await window.webkit.messageHandlers.native.postMessage({cmd, ...}) */
 static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *message,
@@ -93,31 +72,60 @@ static gboolean widget_on_monitor(const WidgetConfig *w, GdkMonitor *monitor) {
     return connector != NULL && g_strv_contains((const gchar *const *)w->monitors, connector);
 }
 
-static GtkWindow *spawn_window(GtkApplication *app, AppState *state, WidgetConfig *w, GdkMonitor *monitor) {
+static GtkWindow *spawn_window(GtkApplication *app, AppState *state, WidgetConfig *w, guint n, GdkMonitor *monitor) {
     GtkWindow *window = GTK_WINDOW(gtk_application_window_new(app));
+
+    GdkRectangle geo;
+    gdk_monitor_get_geometry(monitor, &geo);
+    gtk_window_set_default_size(window, size_to_px(w->width, geo.width), size_to_px(w->height, geo.height));
 
     // layer shell stuff
     gtk_layer_init_for_window(window);
     gtk_layer_set_namespace(window, w->namespace);
-    gtk_layer_set_layer(window, GTK_LAYER_SHELL_LAYER_TOP);
     gtk_layer_set_monitor(window, monitor);
+    g_debug("widgets[%u]: layer shell initalized", n);
 
-    // position (placeholders)
-    gtk_layer_set_anchor(window, GTK_LAYER_SHELL_EDGE_TOP, TRUE);
-    gtk_layer_set_anchor(window, GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
-    gtk_layer_set_anchor(window, GTK_LAYER_SHELL_EDGE_RIGHT, TRUE);
-    gtk_layer_auto_exclusive_zone_enable(window);
+    gtk_layer_set_layer(window, w->layer);
+    g_debug("widgets[%u]: set layer to %d", n, w->layer);
 
+    for (int e = 0; e < GTK_LAYER_SHELL_EDGE_ENTRY_NUMBER; e++) {
+        gtk_layer_set_anchor(window, e, w->anchor[e]);
+    }
+
+    switch (w->exclusive) {
+        case EXCLUSIVE_NONE: gtk_layer_set_exclusive_zone(window, 0); break;
+        case EXCLUSIVE_FIXED: gtk_layer_set_exclusive_zone(window, w->exclusive_px); break;
+        case EXCLUSIVE_AUTO: gtk_layer_auto_exclusive_zone_enable(window); break;
+    }
+
+    g_debug("widgets[%u]: set exclusive zone to %d", n, w->exclusive);
+
+    GtkWidget *view = g_object_new(WEBKIT_TYPE_WEB_VIEW, "user-content-manager", state->content_manager, NULL);
+    webkit_settings_set_enable_developer_extras(webkit_web_view_get_settings(WEBKIT_WEB_VIEW(view)), state->config->devtools);
+    GdkRGBA transparent = { 0, 0, 0, 0 };
+    webkit_web_view_set_background_color(WEBKIT_WEB_VIEW(view), &transparent);
+
+
+    g_autofree char *uri = g_filename_to_uri(w->path, NULL, NULL);
+    webkit_web_view_load_uri(WEBKIT_WEB_VIEW(view), uri);
+    gtk_window_set_child(window, view);
+
+    gtk_window_present(window);
     return window;
 }
 
 static void on_activate(GtkApplication *app, gpointer user_data) {
     AppState *state = user_data;
 
-    if (state->monitors == NULL) {
-        state_init(state);
-        g_debug("state initialized");
-    }
+    if (state->monitors != NULL)
+        return;
+
+    state_init(state);
+    GtkCssProvider *css = gtk_css_provider_new();
+    gtk_css_provider_load_from_string(css, "window { background: none; }");
+    gtk_style_context_add_provider_for_display(gdk_display_get_default(), GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(css);
+    g_debug("state initialized");
 
     for (guint m = 0; m < g_list_model_get_n_items(state->monitors); m++) {
         g_autoptr(GdkMonitor) monitor = g_list_model_get_item(state->monitors, m);
@@ -134,6 +142,7 @@ static void on_activate(GtkApplication *app, gpointer user_data) {
                 gint height = size_to_px(w->height, geo.height);
 
                 g_info("spawning widget (%dx%d) on %s, path: %s", width, height, gdk_monitor_get_connector(monitor), w->path);
+                spawn_window(app, state, w, i, monitor);
             }
         }
     }
