@@ -11,13 +11,27 @@ static gboolean node_is_string(JsonNode *node) {
     return JSON_NODE_HOLDS_VALUE(node) && json_node_get_value_type(node) == G_TYPE_STRING;
 }
 
+static gboolean node_to_px(JsonNode *node, int *out) {
+    if (!JSON_NODE_HOLDS_VALUE(node))
+        return FALSE;
+
+    GType type = json_node_get_value_type(node);
+    if (type != G_TYPE_INT64 && type != G_TYPE_DOUBLE)
+        return FALSE;
+
+    *out = (int)json_node_get_double(node);
+
+    return TRUE;
+}
+
 static gchar *resolve_path(const gchar *config_path, const gchar *path, GError **error) {
     g_autofree gchar *expanded = NULL;
 
     if (g_str_equal(path, "~") || g_str_has_prefix(path, "~"))
         expanded = g_build_filename(g_get_home_dir(), path + 1, NULL);
 
-    g_autofree gchar *base = g_path_get_dirname(config_path);
+    g_autofree gchar *dir = g_path_get_dirname(config_path);
+    g_autofree gchar *base = g_canonicalize_filename(dir, NULL);
     g_autofree gchar *resolved = g_canonicalize_filename(expanded ? expanded : path, base);
 
     if (g_file_test(resolved, G_FILE_TEST_IS_DIR)) {
@@ -200,6 +214,64 @@ static gboolean parse_anchor(JsonObject *obj, const gchar *key, gboolean anchor[
     return FALSE;
 }
 
+static gboolean parse_margins(JsonObject *obj, const gchar *key, gint margins[], GError **error) {
+    for (gint e = 0; e < GTK_LAYER_SHELL_EDGE_ENTRY_NUMBER; e++) {
+        margins[e] = 0;
+    }
+
+    if (!json_object_has_member(obj, key))
+        return TRUE;
+
+    JsonNode *node = json_object_get_member(obj, key);
+    gint px;
+
+    if (node_to_px(node, &px)) {
+        for (gint e = 0; e < GTK_LAYER_SHELL_EDGE_ENTRY_NUMBER; e++) {
+            margins[e] = px;
+        }
+
+        return TRUE;
+    }
+
+    if (!JSON_NODE_HOLDS_OBJECT(node)) {
+        g_set_error(error, JSON_PARSER_ERROR, JSON_PARSER_ERROR_INVALID_DATA, "\"%s\": expected a number or {top, bottom, left, right}", key);
+        return FALSE;
+    }
+
+    static const struct { const char *name; GtkLayerShellEdge edge; } edges[] = {
+         { "top", GTK_LAYER_SHELL_EDGE_TOP },
+         { "bottom", GTK_LAYER_SHELL_EDGE_BOTTOM },
+         { "left", GTK_LAYER_SHELL_EDGE_LEFT },
+         { "right", GTK_LAYER_SHELL_EDGE_RIGHT },
+    };
+
+    JsonObjectIter iter;
+    const gchar *name;
+    JsonNode *value;
+
+    json_object_iter_init(&iter, json_node_get_object(node));
+
+    while (json_object_iter_next(&iter, &name, &value)) {
+        gsize i = 0;
+
+        while (i < G_N_ELEMENTS(edges) && !g_str_equal(edges[i].name, name)) {
+            i++;
+        }
+
+        if (i == G_N_ELEMENTS(edges)) {
+            g_set_error(error, JSON_PARSER_ERROR, JSON_PARSER_ERROR_INVALID_DATA, "\"%s\": unknown edge \"%s\" (use top, bottom, left, right)", key, name);
+            return FALSE;
+        }
+
+        if (!node_to_px(value, &margins[edges[i].edge])) {
+            g_set_error(error, JSON_PARSER_ERROR, JSON_PARSER_ERROR_INVALID_DATA, "\"%s.%s\": expected a number", key, name);
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
 static gboolean parse_exclusive(JsonObject *obj, const gchar *key, ExclusiveMode *mode, int *px, GError **error) {
     *mode = EXCLUSIVE_NONE;
     *px = 0;
@@ -291,6 +363,7 @@ void config_parse(Config *config, const gchar *path) {
                 !parse_monitors(obj, "monitors", w, &widget_error) ||
                 !parse_layer(obj, "layer", &w->layer, &widget_error) ||
                 !parse_anchor(obj, "anchor", w->anchor, &widget_error) ||
+                !parse_margins(obj, "margin", w->margin, &widget_error) ||
                 !parse_exclusive(obj, "exclusive", &w->exclusive, &w->exclusive_px, &widget_error)
             ) {
                 g_warning("widgets[%u]: %s, skipping", i, widget_error->message);

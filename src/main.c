@@ -7,11 +7,8 @@
 #include <gio/gio.h>
 
 #include "config.h"
-#include "glibconfig.h"
-#include "gtk/gtkshortcut.h"
 #include "log.h"
 #include "state.h"
-#include "webkit/WebKitSettings.h"
 
 /* JS: await window.webkit.messageHandlers.native.postMessage({cmd, ...}) */
 static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *message,
@@ -90,6 +87,7 @@ static GtkWindow *spawn_window(GtkApplication *app, AppState *state, WidgetConfi
 
     for (int e = 0; e < GTK_LAYER_SHELL_EDGE_ENTRY_NUMBER; e++) {
         gtk_layer_set_anchor(window, e, w->anchor[e]);
+        gtk_layer_set_margin(window, e, w->margin[e]);
     }
 
     switch (w->exclusive) {

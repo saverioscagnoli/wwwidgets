@@ -24,6 +24,7 @@ typedef struct {
     Size height;
     GtkLayerShellLayer layer;
     gboolean anchor[GTK_LAYER_SHELL_EDGE_ENTRY_NUMBER];
+    gint margin[GTK_LAYER_SHELL_EDGE_ENTRY_NUMBER];
     ExclusiveMode exclusive;
     int exclusive_px;
 } WidgetConfig;
