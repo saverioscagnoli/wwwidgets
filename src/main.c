@@ -10,49 +10,6 @@
 #include "log.h"
 #include "state.h"
 
-/* JS: await window.webkit.messageHandlers.native.postMessage({cmd, ...}) */
-static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *message,
-                                  WebKitScriptMessageReply *reply, gpointer user_data) {
-    (void)manager;
-    (void)user_data;
-
-    JSCContext *ctx = jsc_value_get_context(message);
-    g_autoptr(JSCValue) cmd_value = jsc_value_object_get_property(message, "cmd");
-    g_autofree char *cmd = jsc_value_to_string(cmd_value);
-
-    printf("%s\n", cmd);
-
-    if (g_str_equal(cmd, "info")) {
-        g_autoptr(JSCValue) result = jsc_value_new_object(ctx, NULL, NULL);
-        g_autofree char *gtk = g_strdup_printf("%u.%u.%u", gtk_get_major_version(),
-                                               gtk_get_minor_version(), gtk_get_micro_version());
-        g_autofree char *webkit = g_strdup_printf("%u.%u.%u", webkit_get_major_version(),
-                                                  webkit_get_minor_version(), webkit_get_micro_version());
-        g_autoptr(JSCValue) v_host = jsc_value_new_string(ctx, g_get_host_name());
-        g_autoptr(JSCValue) v_user = jsc_value_new_string(ctx, g_get_user_name());
-        g_autoptr(JSCValue) v_gtk = jsc_value_new_string(ctx, gtk);
-        g_autoptr(JSCValue) v_webkit = jsc_value_new_string(ctx, webkit);
-        jsc_value_object_set_property(result, "host", v_host);
-        jsc_value_object_set_property(result, "user", v_user);
-        jsc_value_object_set_property(result, "gtk", v_gtk);
-        jsc_value_object_set_property(result, "webkit", v_webkit);
-        webkit_script_message_reply_return_value(reply, result);
-    } else if (g_str_equal(cmd, "greet")) {
-        g_autoptr(JSCValue) name_value = jsc_value_object_get_property(message, "name");
-        g_autofree char *name = jsc_value_to_string(name_value);
-        g_autoptr(GDateTime) now = g_date_time_new_now_local();
-        g_autofree char *time = g_date_time_format(now, "%H:%M:%S");
-        g_autofree char *text = g_strdup_printf("Hello %s, from C at %s!", name, time);
-        g_autoptr(JSCValue) result = jsc_value_new_string(ctx, text);
-        webkit_script_message_reply_return_value(reply, result);
-    } else {
-        webkit_script_message_reply_return_error_message(reply, "unknown command");
-    }
-
-    return TRUE;
-}
-
-
 static const gchar *APP_ID = "dev.svscagn.wwwidgets";
 static const gchar *CONFIG_DIR_NAME = "wwwidgets";
 static const gchar *CONFIG_FILE_NAME = "config.json";
@@ -102,6 +59,8 @@ static GtkWindow *spawn_window(GtkApplication *app, AppState *state, WidgetConfi
     webkit_settings_set_enable_developer_extras(webkit_web_view_get_settings(WEBKIT_WEB_VIEW(view)), state->config->devtools);
     GdkRGBA transparent = { 0, 0, 0, 0 };
     webkit_web_view_set_background_color(WEBKIT_WEB_VIEW(view), &transparent);
+
+    g_ptr_array_add(state->views, view);
 
 
     g_autofree char *uri = g_filename_to_uri(w->path, NULL, NULL);

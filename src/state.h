@@ -10,8 +10,12 @@ typedef struct {
     Config *config;
     GListModel *monitors;
     WebKitUserContentManager *content_manager;
+    GPtrArray *views;
+    GDBusProxy *upower;
+
 } AppState;
 
+void push_event(WebKitWebView *view, const gchar *name, GVariant *detail);
 void state_init(AppState *state);
 void state_clear(AppState *state);
 
