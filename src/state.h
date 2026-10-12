@@ -6,12 +6,16 @@
 
 #include "config.h"
 
+struct ext_workspace_manager_v1;
+
 typedef struct {
     Config *config;
     GListModel *monitors;
     WebKitUserContentManager *content_manager;
     GPtrArray *views;
     GDBusProxy *upower;
+    struct ext_workspace_manager_v1 *ws_manager;
+    GPtrArray *workspaces;
 
 } AppState;
 
