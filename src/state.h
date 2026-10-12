@@ -8,6 +8,8 @@
 
 struct ext_workspace_manager_v1;
 
+typedef struct Tray Tray;
+
 typedef struct {
     Config *config;
     GListModel *monitors;
@@ -16,6 +18,11 @@ typedef struct {
     GDBusProxy *upower;
     struct ext_workspace_manager_v1 *ws_manager;
     GPtrArray *workspaces;
+    GDBusConnection *notif_bus;
+    guint notif_owner;
+    guint32 notif_next_id;
+    GPtrArray *notifications;
+    Tray *tray;
 
 } AppState;
 

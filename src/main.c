@@ -63,7 +63,8 @@ static GtkWindow *spawn_window(GtkApplication *app, AppState *state, WidgetConfi
     g_ptr_array_add(state->views, view);
 
 
-    g_autofree char *uri = g_filename_to_uri(w->path, NULL, NULL);
+    g_autofree char *entry = g_path_get_basename(w->path);
+    g_autofree char *uri = g_strdup_printf("wwwidgets://widget-%u/%s", n, entry);
     webkit_web_view_load_uri(WEBKIT_WEB_VIEW(view), uri);
     gtk_window_set_child(window, view);
 

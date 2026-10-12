@@ -5,6 +5,7 @@
 
 #include "state.h"
 #include "battery.h"
+#include "notifications.h"
 #include "webkit/WebKitUserContentManager.h"
 #include "workspace.h"
 
@@ -23,6 +24,12 @@ static const char *SHIM =
     "      get: () => call('workspace.get'),"
     "      set: (id) => call('workspace.set', { id }),"
     "      onChange: (cb) => on('workspace', cb),"
+    "    },"
+    "    notifications: {"
+    "      list: () => call('notifications.list'),"
+    "      close: (id) => call('notifications.close', { id }),"
+    "      invoke: (id, key) => call('notifications.invoke', { id, key }),"
+    "      onChange: (cb) => on('notifications', cb),"
     "    },"
     "    battery: {"
     "      get: () => call('battery.get'),"
@@ -81,6 +88,28 @@ static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *m
           webkit_script_message_reply_return_value(reply, ok);
       else
           webkit_script_message_reply_return_error_message(reply, "no such workspace or not activable");
+    } else if (g_str_equal(cmd, "notifications.list")) {
+        g_autoptr(GVariant) list = notifications_list(state);
+        reply_variant(reply, ctx, list);
+    } else if (g_str_equal(cmd, "notifications.close")) {
+        g_autoptr(JSCValue) id_value = jsc_value_object_get_property(message, "id");
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (notifications_close(state, (guint32)jsc_value_to_int32(id_value)))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no such notification");
+    } else if (g_str_equal(cmd, "notifications.invoke")) {
+        g_autoptr(JSCValue) id_value = jsc_value_object_get_property(message, "id");
+        g_autoptr(JSCValue) key_value = jsc_value_object_get_property(message, "key");
+        g_autofree gchar *key = jsc_value_to_string(key_value);
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (notifications_invoke(state, (guint32)jsc_value_to_int32(id_value), key))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no such notification or action");
+
     } else if (g_str_equal(cmd, "battery.get")) {
         if (!state->upower)
             return webkit_script_message_reply_return_error_message(reply, "no battery"), TRUE;
@@ -92,6 +121,57 @@ static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *m
     }
 
     return TRUE;
+}
+
+static gboolean widget_serve(AppState *state, WebKitURISchemeRequest *request, const gchar *host, const gchar *path) {
+    gchar *end;
+    guint64 index = g_ascii_strtoull(host + strlen("widget-"), &end, 10);
+
+    if (*end != '\0' || end == host + strlen("widget-") || index >= state->config->widgets->len)
+        return FALSE;
+
+    WidgetConfig *w = g_ptr_array_index(state->config->widgets, index);
+    g_autofree gchar *dir = g_path_get_dirname(w->path);
+    g_autoptr(GFile) root = g_file_new_for_path(dir);
+
+    while (*path == '/')
+        path++;
+
+    g_autofree gchar *entry = *path ? NULL : g_path_get_basename(w->path);
+    g_autoptr(GFile) file = g_file_resolve_relative_path(root, entry ? entry : path);
+
+    if (!g_file_has_prefix(file, root))
+        return FALSE;
+
+    gchar *contents;
+    gsize len;
+
+    if (!g_file_load_contents(file, NULL, &contents, &len, NULL, NULL))
+        return FALSE;
+
+    g_autoptr(GBytes) bytes = g_bytes_new_take(contents, len);
+    g_autofree gchar *name = g_file_get_basename(file);
+    g_autofree gchar *type = g_content_type_guess(name, (const guchar *)contents, len, NULL);
+    g_autofree gchar *mime = g_content_type_get_mime_type(type);
+    g_autoptr(GInputStream) stream = g_memory_input_stream_new_from_bytes(bytes);
+
+    webkit_uri_scheme_request_finish(request, stream, len, mime);
+    return TRUE;
+}
+
+static void on_scheme_request(WebKitURISchemeRequest *request, gpointer user_data) {
+    AppState *state = user_data;
+    g_autoptr(GUri) uri = g_uri_parse(webkit_uri_scheme_request_get_uri(request), G_URI_FLAGS_NONE, NULL);
+    const gchar *host = uri ? g_uri_get_host(uri) : NULL;
+
+    if (host && g_str_equal(host, "notifications") && notifications_serve(state, request, g_uri_get_path(uri)))
+        return;
+
+    if (host && g_str_has_prefix(host, "widget-") && widget_serve(state, request, host, g_uri_get_path(uri)))
+        return;
+
+    g_autoptr(GError) err = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_NOT_FOUND, "not found");
+    webkit_uri_scheme_request_finish_error(request, err);
 }
 
 void state_init(AppState *state) {
@@ -110,8 +190,16 @@ void state_init(AppState *state) {
     g_debug("shim injected to js");
 
     state->views = g_ptr_array_new();
-    workspace_init(state);
-    battery_init(state);
+    webkit_web_context_register_uri_scheme(webkit_web_context_get_default(), "wwwidgets", on_scheme_request, state, NULL);
+
+    if (state->config->workspaces)
+        workspace_init(state);
+
+    if (state->config->notifications)
+        notifications_init(state);
+
+    if (state->config->battery)
+        battery_init(state);
 }
 
 void state_clear(AppState *state) {
@@ -120,6 +208,7 @@ void state_clear(AppState *state) {
     g_clear_object(&state->content_manager);
     g_clear_pointer(&state->views, g_ptr_array_unref);
     g_clear_pointer(&state->workspaces, g_ptr_array_unref);
+    notifications_clear(state);
     g_clear_object(&state->upower);
     g_debug("state cleared");
 }
