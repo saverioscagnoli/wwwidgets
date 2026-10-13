@@ -1,7 +1,6 @@
 #include <gtk/gtk.h>
 #include <unistd.h>
 
-#include "config.h"
 #include "gio/gio.h"
 #include "glib.h"
 #include "glibconfig.h"
@@ -15,6 +14,29 @@
 #define ITEM_IFACE "org.kde.StatusNotifierItem"
 #define ITEM_DEFAULT_PATH "/StatusNotifierItem"
 #define MENU_IFACE "com.canonical.dbusmenu"
+
+static const gchar WATCHER_XML[] =
+    "<node>"
+    "  <interface name='org.kde.StatusNotifierWatcher'>"
+    "    <method name='RegisterStatusNotifierItem'>"
+    "      <arg type='s' name='service' direction='in'/>"
+    "    </method>"
+    "    <method name='RegisterStatusNotifierHost'>"
+    "      <arg type='s' name='service' direction='in'/>"
+    "    </method>"
+    "    <property name='RegisteredStatusNotifierItems' type='as' access='read'/>"
+    "    <property name='IsStatusNotifierHostRegistered' type='b' access='read'/>"
+    "    <property name='ProtocolVersion' type='i' access='read'/>"
+    "    <signal name='StatusNotifierItemRegistered'>"
+    "      <arg type='s' name='service'/>"
+    "    </signal>"
+    "    <signal name='StatusNotifierItemUnregistered'>"
+    "      <arg type='s' name='service'/>"
+    "    </signal>"
+    "    <signal name='StatusNotifierHostRegistered'/>"
+    "    <signal name='StatusNotifierHostUnregistered'/>"
+    "  </interface>"
+    "</node>";
 
 typedef struct {
     gchar *key;
@@ -39,7 +61,6 @@ struct Tray {
     GDBusConnection *bus;
     guint watcher_object;
     guint watcher_owner;
-    gchar *watcher_path;
     guint host_owner;
     gchar *host_name;
     guint watcher_watch;
@@ -50,7 +71,7 @@ struct Tray {
     guint32 next_id;
 };
 
-static void registration_fee(Registration *r) {
+static void registration_free(Registration *r) {
     g_bus_unwatch_name(r->watch_id);
     g_free(r->key);
     g_free(r);
@@ -456,11 +477,11 @@ void tray_init(AppState *state) {
     }
 
     g_autoptr(GDBusNodeInfo) info = g_dbus_node_info_new_for_xml(WATCHER_XML, &err);
-    Tray *t = g_new(Tray, 1);
+    Tray *t = g_new0(Tray, 1);
 
     t->app = state;
     t->bus = bus;
-    t->registrations = g_ptr_array_new_with_free_func((GDestroyNotify)registration_fee);
+    t->registrations = g_ptr_array_new_with_free_func((GDestroyNotify)registration_free);
     t->items = g_ptr_array_new_with_free_func((GDestroyNotify)item_free);
     t->host_name = g_strdup_printf("org.kde.StatusNotifierHost-%d", getpid());
 
@@ -529,7 +550,7 @@ static void on_call_done(GObject *source, GAsyncResult *res, gpointer user_data)
 gboolean tray_activate(AppState *state, guint32 id, const gchar *method) {
     TrayItem *it = state->tray ? item_find(state->tray, id) : NULL;
 
-    if (it)
+    if (!it)
         return FALSE;
 
     g_dbus_connection_call(state->tray->bus, it->bus, it->path, ITEM_IFACE, method, g_variant_new("(ii)", 0, 0), NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, on_call_done, g_strdup(method));
@@ -544,6 +565,139 @@ gboolean tray_scroll(AppState *state, guint32 id, gint32 delta, const gchar *ori
         return FALSE;
 
     g_dbus_connection_call(state->tray->bus, it->bus, it->path, ITEM_IFACE, "Scroll", g_variant_new("(is)", delta, orientation), NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, on_call_done, g_strdup("Scroll"));
+
+    return TRUE;
+}
+
+static gchar *strip_mnemonic(const gchar *label) {
+    GString *s = g_string_new(NULL);
+
+    for (const gchar *p = label; *p; p++) {
+        if (*p == '_' && p[1] != '_')
+            continue;
+
+        if (*p == '_')
+            p++;
+
+        g_string_append_c(s, *p);
+    }
+
+    return g_string_free(s, FALSE);
+}
+
+static GVariant *menu_node(GVariant *node) {
+    gint32 id;
+    g_autoptr(GVariant) props = NULL;
+    g_autoptr(GVariant) children = NULL;
+    const gchar *label = "", *type = "standard", *toggle_type = "";
+    gboolean enabled = TRUE, visible = TRUE;
+    gint32 toggle_state = -1;
+
+    g_variant_get(node, "(i@a{sv}@av)", &id, &props, &children);
+    g_variant_lookup(props, "label", "&s", &label);
+    g_variant_lookup(props, "type", "&s", &type);
+    g_variant_lookup(props, "toggle-type", "&s", &toggle_type);
+    g_variant_lookup(props, "toggle-state", "i", &toggle_state);
+    g_variant_lookup(props, "enabled", "b", &enabled);
+    g_variant_lookup(props, "visible", "b", &visible);
+
+    g_autofree gchar *clean = strip_mnemonic(label);
+    GVariantBuilder kids;
+    GVariantIter iter;
+    GVariant *child;
+
+    g_variant_builder_init(&kids, G_VARIANT_TYPE("aa{sv}"));
+    g_variant_iter_init(&iter, children);
+
+    while (g_variant_iter_next(&iter, "v", &child)) {
+        if (g_variant_is_of_type(child, G_VARIANT_TYPE("(ia{sv}av)")))
+            g_variant_builder_add_value(&kids, menu_node(child));
+
+        g_variant_unref(child);
+    }
+
+    GVariantBuilder b;
+    g_variant_builder_init(&b, G_VARIANT_TYPE_VARDICT);
+    g_variant_builder_add(&b, "{sv}", "id", g_variant_new_int32(id));
+    g_variant_builder_add(&b, "{sv}", "label", g_variant_new_string(clean));
+    g_variant_builder_add(&b, "{sv}", "type", g_variant_new_string(type));
+    g_variant_builder_add(&b, "{sv}", "enabled", g_variant_new_boolean(enabled));
+    g_variant_builder_add(&b, "{sv}", "visible", g_variant_new_boolean(visible));
+    g_variant_builder_add(&b, "{sv}", "toggleType", g_variant_new_string(toggle_type));
+    g_variant_builder_add(&b, "{sv}", "toggleState", g_variant_new_int32(toggle_state));
+    g_variant_builder_add(&b, "{sv}", "children", g_variant_builder_end(&kids));
+
+    return g_variant_builder_end(&b);
+}
+
+typedef struct {
+    TrayMenuCallback callback;
+    gpointer user_data;
+} MenuRequest;
+
+static void on_menu_layout(GObject *source, GAsyncResult *res, gpointer user_data) {
+    g_autoptr(GError) err = NULL;
+    g_autoptr(GVariant) ret = g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), res, &err);
+    g_autofree MenuRequest *req = user_data;
+
+    if (!ret) {
+        req->callback(NULL, err->message, req->user_data);
+        return;
+    }
+
+    guint32 revision;
+    g_autoptr(GVariant) layout = NULL;
+
+    g_variant_get(ret, "(u@(ia{sv}av))", &revision, &layout);
+
+    g_autoptr(GVariant) root = g_variant_ref_sink(menu_node(layout));
+    g_autoptr(GVariant) children = g_variant_lookup_value(root, "children", NULL);
+
+    req->callback(children, NULL, req->user_data);
+}
+
+gboolean tray_menu(AppState *state, guint32 id, TrayMenuCallback callback, gpointer user_data) {
+    TrayItem *it = state->tray ? item_find(state->tray, id) : NULL;
+    const gchar *menu = it ? item_menu(it) : NULL;
+
+    if (!menu)
+        return FALSE;
+
+    MenuRequest *req = g_new0(MenuRequest, 1);
+
+    req->callback = callback;
+    req->user_data = user_data;
+
+    g_dbus_connection_call(state->tray->bus, it->bus, menu, MENU_IFACE, "AboutToShow", g_variant_new("(i)", 0), NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
+    g_dbus_connection_call(state->tray->bus, it->bus, menu, MENU_IFACE, "GetLayout", g_variant_new("(ii@as)", 0, -1, g_variant_new_strv(NULL, 0)), G_VARIANT_TYPE("(u(ia{sv}av))"), G_DBUS_CALL_FLAGS_NONE, -1, NULL, on_menu_layout, req);
+
+    return TRUE;
+}
+
+gboolean tray_menu_click(AppState *state, guint32 id, gint32 item) {
+    TrayItem *it = state->tray ? item_find(state->tray, id) : NULL;
+    const gchar *menu = it ? item_menu(it) : NULL;
+
+    if (!menu)
+        return FALSE;
+
+    g_dbus_connection_call(state->tray->bus, it->bus, menu, MENU_IFACE, "Event", g_variant_new("(isvu)", item, "clicked", g_variant_new_int32(0), (guint32)(g_get_monotonic_time() / 1000)), NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, on_call_done, g_strdup("Event"));
+
+    return TRUE;
+}
+
+gboolean tray_serve(AppState *state, WebKitURISchemeRequest *request, const gchar *path) {
+    g_auto(GStrv) parts = g_strsplit(path[0] == '/' ? path + 1 : path, "/", 0);
+
+    if (!state->tray || g_strv_length(parts) != 2 || !g_str_equal(parts[1], "icon"))
+        return FALSE;
+
+    TrayItem *it = item_find(state->tray, (guint32)g_ascii_strtoull(parts[0], NULL, 10));
+
+    if (!it || !it->icon.bytes)
+        return FALSE;
+
+    image_serve(&it->icon, request);
 
     return TRUE;
 }

@@ -287,14 +287,51 @@ static gboolean parse_exclusive(JsonObject *obj, const gchar *key, ExclusiveMode
         return TRUE;
     }
 
-    if (type == G_TYPE_INT64 && json_node_get_int(node) >= 0) {
+    if (type == G_TYPE_INT64 && json_node_get_int(node) >= -1) {
         *mode = EXCLUSIVE_FIXED;
         *px = (int)json_node_get_int(node);
         return TRUE;
     }
 
-    g_set_error(error, JSON_PARSER_ERROR, JSON_PARSER_ERROR_INVALID_DATA, "\"%s\": expected true, false or a number of pixels", key);
+    g_set_error(error, JSON_PARSER_ERROR, JSON_PARSER_ERROR_INVALID_DATA, "\"%s\": expected true, false, -1 or a number of pixels", key);
     return FALSE;
+}
+
+static gboolean parse_keyboard(JsonObject *obj, const gchar *key, GtkLayerShellKeyboardMode *out, GError **error) {
+    *out = GTK_LAYER_SHELL_KEYBOARD_MODE_NONE;
+
+    if (!json_object_has_member(obj, key))
+        return TRUE;
+
+    JsonNode *node = json_object_get_member(obj, key);
+    const gchar *s = node_is_string(node) ? json_node_get_string(node) : "";
+
+    if (g_str_equal(s, "none"))           *out = GTK_LAYER_SHELL_KEYBOARD_MODE_NONE;
+    else if (g_str_equal(s, "on-demand")) *out = GTK_LAYER_SHELL_KEYBOARD_MODE_ON_DEMAND;
+    else if (g_str_equal(s, "exclusive")) *out = GTK_LAYER_SHELL_KEYBOARD_MODE_EXCLUSIVE;
+    else {
+        g_set_error(error, JSON_PARSER_ERROR, JSON_PARSER_ERROR_INVALID_DATA, "\"%s\": expected \"none\", \"on-demand\" or \"exclusive\"", key);
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static gboolean parse_visible_when(JsonObject *obj, const gchar *key, gchar **out, GError **error) {
+    *out = NULL;
+
+    if (!json_object_has_member(obj, key))
+        return TRUE;
+
+    JsonNode *node = json_object_get_member(obj, key);
+
+    if (!node_is_string(node) || *json_node_get_string(node) == '\0') {
+        g_set_error(error, JSON_PARSER_ERROR, JSON_PARSER_ERROR_INVALID_DATA, "\"%s\": expected a state key", key);
+        return FALSE;
+    }
+
+    *out = g_strdup(json_node_get_string(node));
+    return TRUE;
 }
 
 void config_parse(Config *config, const gchar *path) {
@@ -311,6 +348,7 @@ void config_parse(Config *config, const gchar *path) {
     gboolean workspaces = json_object_get_boolean_member_with_default(root, "workspaces", FALSE);
     gboolean notifications = json_object_get_boolean_member_with_default(root, "notifications", FALSE);
     gboolean tray = json_object_get_boolean_member_with_default(root, "tray", FALSE);
+    gboolean audio = json_object_get_boolean_member_with_default(root, "audio", FALSE);
     gboolean bluetooth = json_object_get_boolean_member_with_default(root, "bluetooth", FALSE);
     gboolean network = json_object_get_boolean_member_with_default(root, "network", FALSE);
     gboolean battery = json_object_get_boolean_member_with_default(root, "battery", FALSE);
@@ -319,6 +357,7 @@ void config_parse(Config *config, const gchar *path) {
     config->workspaces = workspaces;
     config->notifications = notifications;
     config->tray = tray;
+    config->audio = audio;
     config->bluetooth = bluetooth;
     config->network = network;
     config->battery = battery;
@@ -327,6 +366,7 @@ void config_parse(Config *config, const gchar *path) {
     g_debug("workspaces: %s", BOOL_STR(workspaces));
     g_debug("notifications: %s", BOOL_STR(notifications));
     g_debug("tray: %s", BOOL_STR(tray));
+    g_debug("audio: %s", BOOL_STR(audio));
     g_debug("bluetooth: %s", BOOL_STR(bluetooth));
     g_debug("network: %s", BOOL_STR(network));
     g_debug("battery: %s", BOOL_STR(battery));
@@ -339,16 +379,17 @@ void config_parse(Config *config, const gchar *path) {
         for (guint i = 0; i < json_array_get_length(widgets); i++) {
             JsonObject *obj = json_array_get_object_element(widgets, i);
 
-            if (obj == NULL || !json_object_has_member(obj, "path")) {
-                g_warning("widgets[%u]: missing \"path\", skipping", i);
+            if (obj == NULL) {
+                g_warning("widgets[%u]: expected an object, skipping", i);
                 continue;
             }
 
             WidgetConfig *w = g_new0(WidgetConfig, 1);
             g_autoptr(GError) widget_error = NULL;
 
-            w->path = resolve_path(path, json_object_get_string_member(obj, "path"), &widget_error);
-            if (w->path == NULL) {
+            if (!json_object_has_member(obj, "path"))
+                g_debug("widgets[%u]: no \"path\", spawning a spacer", i);
+            else if ((w->path = resolve_path(path, json_object_get_string_member(obj, "path"), &widget_error)) == NULL) {
                 g_warning("widgets[%u]: %s, skipping", i, widget_error->message);
                 widget_config_free(w);
                 continue;
@@ -356,7 +397,7 @@ void config_parse(Config *config, const gchar *path) {
 
             w->namespace = g_strdup(json_object_get_string_member_with_default(obj, "namespace", "wwwidgets"));
 
-            Size fallback = { 100, TRUE };
+            Size fallback = w->path ? (Size){ 100, TRUE } : (Size){ 1, FALSE };
 
             if (!parse_size(obj, "width", fallback, &w->width, &widget_error) ||
                 !parse_size(obj, "height", fallback, &w->height, &widget_error) ||
@@ -364,7 +405,9 @@ void config_parse(Config *config, const gchar *path) {
                 !parse_layer(obj, "layer", &w->layer, &widget_error) ||
                 !parse_anchor(obj, "anchor", w->anchor, &widget_error) ||
                 !parse_margins(obj, "margin", w->margin, &widget_error) ||
-                !parse_exclusive(obj, "exclusive", &w->exclusive, &w->exclusive_px, &widget_error)
+                !parse_exclusive(obj, "exclusive", &w->exclusive, &w->exclusive_px, &widget_error) ||
+                !parse_keyboard(obj, "keyboard", &w->keyboard, &widget_error) ||
+                !parse_visible_when(obj, "visible-when", &w->visible_when, &widget_error)
             ) {
                 g_warning("widgets[%u]: %s, skipping", i, widget_error->message);
                 widget_config_free(w);

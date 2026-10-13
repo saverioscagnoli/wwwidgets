@@ -85,12 +85,8 @@ static gboolean image_load_data(Image *img, GVariant *v) {
         return FALSE;
 
     g_autoptr(GBytes) bytes = g_bytes_new(data, len);
-    g_autoptr(GdkTexture) texture = gdk_memory_texture_new(width, height, alpha ? GDK_MEMORY_R8G8B8A8 : GDK_MEMORY_R8G8B8, bytes, rowstride);
 
-    img->bytes = gdk_texture_save_to_png_bytes(texture);
-    img->mime = g_strdup("image/png");
-
-    return TRUE;
+    return image_load_pixels(img, width, height, rowstride, alpha ? GDK_MEMORY_R8G8B8A8 : GDK_MEMORY_R8G8B8, bytes);
 }
 
 static gboolean image_load_hints(Image *img, GVariant *hints) {
@@ -108,7 +104,7 @@ static gboolean image_load_hints(Image *img, GVariant *hints) {
         const gchar *path;
 
         if (g_variant_lookup(hints, path_keys[i], "&s", &path))
-            return image_load_icon(img, path);
+            return image_load_icon(img, path, NULL);
     }
 
     return FALSE;
@@ -231,7 +227,7 @@ static guint32 handle_notify(AppState *state, GVariant *params) {
     }
 
     n->app_name = g_strdup(app_name);
-    image_load_icon(&n->icon, icon);
+    image_load_icon(&n->icon, icon, NULL);
     image_load_hints(&n->image, hints);
     n->rev++;
     n->summary = g_strdup(summary);
@@ -381,8 +377,7 @@ gboolean notifications_serve(AppState *state, WebKitURISchemeRequest *request, c
     if (!img || !img->bytes)
         return FALSE;
 
-    g_autoptr(GInputStream) stream = g_memory_input_stream_new_from_bytes(img->bytes);
-    webkit_uri_scheme_request_finish(request, stream, g_bytes_get_size(img->bytes), img->mime);
+    image_serve(img, request);
 
     return TRUE;
 }

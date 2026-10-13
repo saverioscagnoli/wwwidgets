@@ -1,6 +1,6 @@
 CC      ?= cc
 CFLAGS  ?= -O2 -g
-PKGS    := gtk4-layer-shell-0 gtk4 webkitgtk-6.0 json-glib-1.0 wayland-client
+PKGS    := gtk4-layer-shell-0 gtk4 webkitgtk-6.0 json-glib-1.0 wayland-client libpulse libpulse-mainloop-glib
 WL_XML  := $(shell pkg-config --variable=pkgdatadir wayland-protocols)/staging/ext-workspace/ext-workspace-v1.xml
 CFLAGS  += -MMD -MP -Wall -Wextra -Ibuild -DG_LOG_DOMAIN=\"wwwidgets\" -DG_LOG_USE_STRUCTURED $(shell pkg-config --cflags $(PKGS))
 LDLIBS  += $(shell pkg-config --libs $(PKGS))

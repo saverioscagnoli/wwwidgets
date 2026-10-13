@@ -1,11 +1,15 @@
 #include <gdk/gdk.h>
+#include <gtk4-layer-shell.h>
 #include <glib.h>
 #include <jsc/jsc.h>
 #include <json-glib/json-glib.h>
 
 #include "state.h"
+#include "store.h"
+#include "audio.h"
 #include "battery.h"
 #include "notifications.h"
+#include "tray.h"
 #include "webkit/WebKitUserContentManager.h"
 #include "workspace.h"
 
@@ -18,7 +22,19 @@ static const char *SHIM =
     "    window.addEventListener(`wwwidgets:${name}`, h);"
     "    return () => window.removeEventListener(`wwwidgets:${name}`, h);"
     "  };"
+    "  const monitor = new URLSearchParams(location.search).get('monitor') || '';"
+    "  const win = `${location.host}|${monitor}`;"
     "  window.wwwidgets = {"
+    "    monitor,"
+    "    window: {"
+    "      setInputRegion: (rects) => call('window.setInputRegion', { win, rects: rects == null ? 'null' : JSON.stringify(rects) }),"
+    "      setKeyboard: (mode) => call('window.setKeyboard', { win, mode }),"
+    "    },"
+    "    state: {"
+    "      get: (key) => call('state.get', { key }),"
+    "      set: (key, value) => call('state.set', { key, value: JSON.stringify(value ?? null) }),"
+    "      onChange: (key, cb) => on('state', (d) => d.key === key && cb(d.value)),"
+    "    },"
     "    workspace: {"
     "      list: () => call('workspace.list'),"
     "      get: () => call('workspace.get'),"
@@ -30,6 +46,22 @@ static const char *SHIM =
     "      close: (id) => call('notifications.close', { id }),"
     "      invoke: (id, key) => call('notifications.invoke', { id, key }),"
     "      onChange: (cb) => on('notifications', cb),"
+    "    },"
+    "    tray: {"
+    "      list: () => call('tray.list'),"
+    "      activate: (id) => call('tray.activate', { id }),"
+    "      secondaryActivate: (id) => call('tray.secondaryActivate', { id }),"
+    "      contextMenu: (id) => call('tray.contextMenu', { id }),"
+    "      scroll: (id, delta, orientation = 'vertical') => call('tray.scroll', { id, delta, orientation }),"
+    "      menu: (id) => call('tray.menu', { id }),"
+    "      menuClick: (id, item) => call('tray.menuClick', { id, item }),"
+    "      onChange: (cb) => on('tray', cb),"
+    "    },"
+    "    audio: {"
+    "      get: () => call('audio.get'),"
+    "      setVolume: (device, volume) => call('audio.setVolume', { device, volume }),"
+    "      setMute: (device, muted) => call('audio.setMute', { device, muted }),"
+    "      onChange: (cb) => on('audio', cb),"
     "    },"
     "    battery: {"
     "      get: () => call('battery.get'),"
@@ -44,19 +76,93 @@ static void reply_variant(WebKitScriptMessageReply *reply, JSCContext *ctx, GVar
     webkit_script_message_reply_return_value(reply, result);
 }
 
-void push_event(WebKitWebView *view, const gchar *name, GVariant *detail) {
-    g_autofree gchar *s = g_variant_print(detail, TRUE);
-    g_debug("dispatching event: %s, detail: %s", name, s);
+typedef struct {
+    WebKitScriptMessageReply *reply;
+    JSCContext *ctx;
+} PendingReply;
+
+static void on_tray_menu(GVariant *menu, const gchar *error, gpointer user_data) {
+    PendingReply *p = user_data;
+
+    if (menu)
+        reply_variant(p->reply, p->ctx, menu);
+    else
+        webkit_script_message_reply_return_error_message(p->reply, error);
+
+    webkit_script_message_reply_unref(p->reply);
+    g_object_unref(p->ctx);
+    g_free(p);
+}
+
+void push_event_json(WebKitWebView *view, const gchar *name, const gchar *json) {
+    g_debug("dispatching event: %s, detail: %s", name, json);
 
     g_autofree gchar *ev = g_strconcat("wwwidgets:", name, NULL);
-    g_autofree gchar *json = json_gvariant_serialize_data(detail, NULL);
 
     GVariantBuilder b;
+
     g_variant_builder_init(&b, G_VARIANT_TYPE_VARDICT);
     g_variant_builder_add(&b, "{sv}", "name", g_variant_new_string(ev));
     g_variant_builder_add(&b, "{sv}", "detail", g_variant_new_string(json));
 
     webkit_web_view_call_async_javascript_function(view, "window.dispatchEvent(new CustomEvent(name, { detail: JSON.parse(detail) }));", -1, g_variant_builder_end(&b), NULL, NULL, NULL, NULL, NULL);
+}
+
+void push_event(WebKitWebView *view, const gchar *name, GVariant *detail) {
+    g_autofree gchar *json = json_gvariant_serialize_data(detail, NULL);
+    push_event_json(view, name, json);
+}
+
+static GtkWindow *find_window(AppState *state, const gchar *win) {
+    for (guint i = 0; i < state->windows->len; i++) {
+        GtkWindow *window = g_ptr_array_index(state->windows, i);
+
+        if (g_strcmp0(g_object_get_data(G_OBJECT(window), "win"), win) == 0)
+            return window;
+    }
+
+    return NULL;
+}
+
+gboolean window_set_input_region(GtkWindow *window, const gchar *json) {
+    GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(window));
+    g_autoptr(JsonNode) node = json_from_string(json, NULL);
+
+    if (surface == NULL || node == NULL)
+        return FALSE;
+
+    if (JSON_NODE_HOLDS_NULL(node)) {
+        gdk_surface_set_input_region(surface, NULL);
+        return TRUE;
+    }
+
+    if (!JSON_NODE_HOLDS_ARRAY(node))
+        return FALSE;
+
+    JsonArray *array = json_node_get_array(node);
+    cairo_region_t *region = cairo_region_create();
+
+    for (guint i = 0; i < json_array_get_length(array); i++) {
+        JsonObject *r = json_array_get_object_element(array, i);
+
+        if (r == NULL) {
+            cairo_region_destroy(region);
+            return FALSE;
+        }
+
+        cairo_rectangle_int_t rect = {
+            (int)json_object_get_double_member_with_default(r, "x", 0),
+            (int)json_object_get_double_member_with_default(r, "y", 0),
+            (int)json_object_get_double_member_with_default(r, "width", 0),
+            (int)json_object_get_double_member_with_default(r, "height", 0),
+        };
+
+        cairo_region_union_rectangle(region, &rect);
+    }
+
+    gdk_surface_set_input_region(surface, region);
+    cairo_region_destroy(region);
+    return TRUE;
 }
 
 static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *message, WebKitScriptMessageReply *reply, gpointer user_data) {
@@ -68,7 +174,25 @@ static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *m
     g_autoptr(JSCValue) cmd_value = jsc_value_object_get_property(message, "cmd");
     g_autofree gchar *cmd = jsc_value_to_string(cmd_value);
 
-    if (g_str_equal(cmd, "workspace.list")) {
+    if (g_str_equal(cmd, "state.get")) {
+       g_autoptr(JSCValue) key_value = jsc_value_object_get_property(message, "key");
+       g_autofree gchar *key = jsc_value_to_string(key_value);
+       const gchar *json = store_get(state, key);
+       g_autoptr(JSCValue) result = jsc_value_new_from_json(ctx, json ? json : "null");
+
+       webkit_script_message_reply_return_value(reply, result);
+    } else if (g_str_equal(cmd, "state.set")) {
+        g_autoptr(JSCValue) key_value = jsc_value_object_get_property(message, "key");
+        g_autoptr(JSCValue) value_value = jsc_value_object_get_property(message, "value");
+        g_autofree gchar *key = jsc_value_to_string(key_value);
+        g_autofree gchar *value = jsc_value_to_string(value_value);
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (store_set(state, key, value))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "value is not serializable");
+    } else if (g_str_equal(cmd, "workspace.list")) {
         g_autoptr(GVariant) list = workspace_list(state);
         reply_variant(reply, ctx, list);
     } else if (g_str_equal(cmd, "workspace.get")) {
@@ -116,6 +240,103 @@ static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *m
 
         g_autoptr(GVariant) snapshot = battery_snapshot(state->upower);
         reply_variant(reply, ctx, snapshot);
+    } else if (g_str_equal(cmd, "tray.list")) {
+        g_autoptr(GVariant) list = tray_list(state);
+        reply_variant(reply, ctx, list);
+    } else if (g_str_equal(cmd, "tray.activate") || g_str_equal(cmd, "tray.secondaryActivate") || g_str_equal(cmd, "tray.contextMenu")) {
+        const gchar *method = g_str_equal(cmd, "tray.activate") ? "Activate" : g_str_equal(cmd, "tray.secondaryActivate") ? "SecondaryActivate" : "ContextMenu";
+        g_autoptr(JSCValue) id_value = jsc_value_object_get_property(message, "id");
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (tray_activate(state, (guint32)jsc_value_to_int32(id_value), method))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no such tray item");
+    } else if (g_str_equal(cmd, "tray.scroll")) {
+        g_autoptr(JSCValue) id_value = jsc_value_object_get_property(message, "id");
+        g_autoptr(JSCValue) delta_value = jsc_value_object_get_property(message, "delta");
+        g_autoptr(JSCValue) orientation_value = jsc_value_object_get_property(message, "orientation");
+        g_autofree gchar *orientation = jsc_value_to_string(orientation_value);
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (tray_scroll(state, (guint32)jsc_value_to_int32(id_value), jsc_value_to_int32(delta_value), orientation))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no such tray item");
+    } else if (g_str_equal(cmd, "tray.menu")) {
+        g_autoptr(JSCValue) id_value = jsc_value_object_get_property(message, "id");
+        PendingReply *p = g_new0(PendingReply, 1);
+
+        p->reply = webkit_script_message_reply_ref(reply);
+        p->ctx = g_object_ref(ctx);
+
+        if (!tray_menu(state, (guint32)jsc_value_to_int32(id_value), on_tray_menu, p))
+            on_tray_menu(NULL, "no such tray item or it has no menu", p);
+    } else if (g_str_equal(cmd, "tray.menuClick")) {
+        g_autoptr(JSCValue) id_value = jsc_value_object_get_property(message, "id");
+        g_autoptr(JSCValue) item_value = jsc_value_object_get_property(message, "item");
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (tray_menu_click(state, (guint32)jsc_value_to_int32(id_value), jsc_value_to_int32(item_value)))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no such tray item or it has no menu");
+    } else if (g_str_equal(cmd, "audio.get")) {
+        if (!state->audio)
+            return webkit_script_message_reply_return_error_message(reply, "audio is disabled"), TRUE;
+
+        g_autoptr(GVariant) snapshot = audio_snapshot(state);
+        reply_variant(reply, ctx, snapshot);
+    } else if (g_str_equal(cmd, "audio.setVolume")) {
+        g_autoptr(JSCValue) device_value = jsc_value_object_get_property(message, "device");
+        g_autoptr(JSCValue) volume_value = jsc_value_object_get_property(message, "volume");
+        g_autofree gchar *device = jsc_value_to_string(device_value);
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (audio_set_volume(state, device, jsc_value_to_double(volume_value)))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "expected sink or source");
+    } else if (g_str_equal(cmd, "audio.setMute")) {
+        g_autoptr(JSCValue) device_value = jsc_value_object_get_property(message, "device");
+        g_autoptr(JSCValue) muted_value = jsc_value_object_get_property(message, "muted");
+        g_autofree gchar *device = jsc_value_to_string(device_value);
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (audio_set_mute(state, device, jsc_value_to_boolean(muted_value)))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "expected sink or source");
+    } else if (g_str_equal(cmd, "window.setInputRegion") || g_str_equal(cmd, "window.setKeyboard")) {
+        g_autoptr(JSCValue) win_value = jsc_value_object_get_property(message, "win");
+        g_autofree gchar *win = jsc_value_to_string(win_value);
+        GtkWindow *window = find_window(state, win);
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (window == NULL)
+            webkit_script_message_reply_return_error_message(reply, "no such window");
+        else if (g_str_equal(cmd, "window.setInputRegion")) {
+            g_autoptr(JSCValue) rects_value = jsc_value_object_get_property(message, "rects");
+            g_autofree gchar *rects = jsc_value_to_string(rects_value);
+
+            if (window_set_input_region(window, rects))
+                webkit_script_message_reply_return_value(reply, ok);
+            else
+                webkit_script_message_reply_return_error_message(reply, "expected null or a list of {x, y, width, height}");
+        } else {
+            g_autoptr(JSCValue) mode_value = jsc_value_object_get_property(message, "mode");
+            g_autofree gchar *mode = jsc_value_to_string(mode_value);
+
+            if (g_str_equal(mode, "none"))           gtk_layer_set_keyboard_mode(window, GTK_LAYER_SHELL_KEYBOARD_MODE_NONE);
+            else if (g_str_equal(mode, "on-demand")) gtk_layer_set_keyboard_mode(window, GTK_LAYER_SHELL_KEYBOARD_MODE_ON_DEMAND);
+            else if (g_str_equal(mode, "exclusive")) gtk_layer_set_keyboard_mode(window, GTK_LAYER_SHELL_KEYBOARD_MODE_EXCLUSIVE);
+            else {
+                webkit_script_message_reply_return_error_message(reply, "expected none, on-demand or exclusive");
+                return TRUE;
+            }
+
+            webkit_script_message_reply_return_value(reply, ok);
+        }
     } else {
         webkit_script_message_reply_return_error_message(reply, "unknown command");
     }
@@ -131,6 +352,10 @@ static gboolean widget_serve(AppState *state, WebKitURISchemeRequest *request, c
         return FALSE;
 
     WidgetConfig *w = g_ptr_array_index(state->config->widgets, index);
+
+    if (w->path == NULL)
+        return FALSE;
+
     g_autofree gchar *dir = g_path_get_dirname(w->path);
     g_autoptr(GFile) root = g_file_new_for_path(dir);
 
@@ -167,6 +392,9 @@ static void on_scheme_request(WebKitURISchemeRequest *request, gpointer user_dat
     if (host && g_str_equal(host, "notifications") && notifications_serve(state, request, g_uri_get_path(uri)))
         return;
 
+    if (host && g_str_equal(host, "tray") && tray_serve(state, request, g_uri_get_path(uri)))
+        return;
+
     if (host && g_str_has_prefix(host, "widget-") && widget_serve(state, request, host, g_uri_get_path(uri)))
         return;
 
@@ -190,6 +418,8 @@ void state_init(AppState *state) {
     g_debug("shim injected to js");
 
     state->views = g_ptr_array_new();
+    state->windows = g_ptr_array_new();
+    store_init(state);
     webkit_web_context_register_uri_scheme(webkit_web_context_get_default(), "wwwidgets", on_scheme_request, state, NULL);
 
     if (state->config->workspaces)
@@ -197,6 +427,12 @@ void state_init(AppState *state) {
 
     if (state->config->notifications)
         notifications_init(state);
+
+    if (state->config->tray)
+        tray_init(state);
+
+    if (state->config->audio)
+        audio_init(state);
 
     if (state->config->battery)
         battery_init(state);
@@ -207,8 +443,12 @@ void state_clear(AppState *state) {
     g_clear_pointer(&state->config, config_free);
     g_clear_object(&state->content_manager);
     g_clear_pointer(&state->views, g_ptr_array_unref);
+    g_clear_pointer(&state->windows, g_ptr_array_unref);
     g_clear_pointer(&state->workspaces, g_ptr_array_unref);
     notifications_clear(state);
+    tray_clear(state);
+    audio_clear(state);
+    store_clear(state);
     g_clear_object(&state->upower);
     g_debug("state cleared");
 }

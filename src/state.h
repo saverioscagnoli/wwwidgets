@@ -1,6 +1,7 @@
 #pragma once
 
 #include <gio/gio.h>
+#include <gtk/gtk.h>
 #include <webkit/webkit.h>
 #include <glib.h>
 
@@ -9,13 +10,15 @@
 struct ext_workspace_manager_v1;
 
 typedef struct Tray Tray;
+typedef struct Audio Audio;
 
 typedef struct {
     Config *config;
     GListModel *monitors;
     WebKitUserContentManager *content_manager;
     GPtrArray *views;
-    GDBusProxy *upower;
+    GPtrArray *windows;
+    GHashTable *store;
     struct ext_workspace_manager_v1 *ws_manager;
     GPtrArray *workspaces;
     GDBusConnection *notif_bus;
@@ -23,10 +26,14 @@ typedef struct {
     guint32 notif_next_id;
     GPtrArray *notifications;
     Tray *tray;
+    Audio *audio;
+    GDBusProxy *upower;
 
 } AppState;
 
 void push_event(WebKitWebView *view, const gchar *name, GVariant *detail);
+void push_event_json(WebKitWebView *view, const gchar *name, const gchar *json);
+gboolean window_set_input_region(GtkWindow *window, const gchar *json);
 void state_init(AppState *state);
 void state_clear(AppState *state);
 

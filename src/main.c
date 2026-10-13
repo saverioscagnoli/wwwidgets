@@ -1,6 +1,7 @@
 #include <gtk/gtk.h>
 #include <gtk4-layer-shell.h>
 #include <stdio.h>
+#include <stdnoreturn.h>
 #include <webkit/webkit.h>
 #include <glib.h>
 #include <gdk/gdk.h>
@@ -9,6 +10,7 @@
 #include "config.h"
 #include "log.h"
 #include "state.h"
+#include "store.h"
 
 static const gchar *APP_ID = "dev.svscagn.wwwidgets";
 static const gchar *CONFIG_DIR_NAME = "wwwidgets";
@@ -55,6 +57,18 @@ static GtkWindow *spawn_window(GtkApplication *app, AppState *state, WidgetConfi
 
     g_debug("widgets[%u]: set exclusive zone to %d", n, w->exclusive);
 
+    gtk_layer_set_keyboard_mode(window, w->keyboard);
+
+    const gchar *connector = gdk_monitor_get_connector(monitor);
+    g_object_set_data_full(G_OBJECT(window), "win", g_strdup_printf("widget-%u|%s", n, connector ? connector : ""), g_free);
+    g_ptr_array_add(state->windows, window);
+
+    if (w->path == NULL) {
+        gtk_window_present(window);
+        window_set_input_region(window, "[]");
+        return window;
+    }
+
     GtkWidget *view = g_object_new(WEBKIT_TYPE_WEB_VIEW, "user-content-manager", state->content_manager, NULL);
     webkit_settings_set_enable_developer_extras(webkit_web_view_get_settings(WEBKIT_WEB_VIEW(view)), state->config->devtools);
     GdkRGBA transparent = { 0, 0, 0, 0 };
@@ -64,11 +78,22 @@ static GtkWindow *spawn_window(GtkApplication *app, AppState *state, WidgetConfi
 
 
     g_autofree char *entry = g_path_get_basename(w->path);
-    g_autofree char *uri = g_strdup_printf("wwwidgets://widget-%u/%s", n, entry);
+    g_autofree char *monitor_arg = g_uri_escape_string(connector ? connector : "", NULL, FALSE);
+    g_autofree char *uri = g_strdup_printf("wwwidgets://widget-%u/%s?monitor=%s", n, entry, monitor_arg);
     webkit_web_view_load_uri(WEBKIT_WEB_VIEW(view), uri);
     gtk_window_set_child(window, view);
 
     gtk_window_present(window);
+
+    if (w->visible_when) {
+        g_autoptr(GString) key = g_string_new(w->visible_when);
+        g_string_replace(key, "{monitor}", connector ? connector : "", 0);
+
+        g_object_set_data_full(G_OBJECT(window), "visible-when", g_string_free(g_steal_pointer(&key), FALSE), g_free);
+        g_object_set_data(G_OBJECT(window), "keyboard", GINT_TO_POINTER(w->keyboard));
+        store_apply_visibility(state, window);
+    }
+
     return window;
 }
 
@@ -99,32 +124,62 @@ static void on_activate(GtkApplication *app, gpointer user_data) {
                 gint width = size_to_px(w->width, geo.width);
                 gint height = size_to_px(w->height, geo.height);
 
-                g_info("spawning widget (%dx%d) on %s, path: %s", width, height, gdk_monitor_get_connector(monitor), w->path);
+                g_info("spawning widget (%dx%d) on %s, path: %s", width, height, gdk_monitor_get_connector(monitor), w->path ? w->path : "(spacer)");
                 spawn_window(app, state, w, i, monitor);
             }
         }
     }
 }
 
-int main(int argc, char **argv) {
-    log_init();
+static void on_startup(GApplication *app, gpointer user_data) {
+    (void)app;
+
+    AppState *state = user_data;
 
     const gchar *config_dir = g_get_user_config_dir();
     g_debug("user config: %s", config_dir);
 
     g_autofree gchar *config_file = g_build_filename(config_dir, CONFIG_DIR_NAME, CONFIG_FILE_NAME, NULL);
 
-    AppState state = { 0 };
-    state.config = g_new0(Config, 1);
-    config_parse(state.config, config_file);
+    state->config = g_new0(Config, 1);
+    config_parse(state->config, config_file);
+}
 
-    GtkApplication *app = gtk_application_new(APP_ID, G_APPLICATION_DEFAULT_FLAGS);
+static gint on_command_line(GApplication *app, GApplicationCommandLine *cmdline, gpointer user_data) {
+    AppState *state = user_data;
+    gint argc;
+    g_auto(GStrv) argv = g_application_command_line_get_arguments(cmdline, &argc);
+
+    if (argc < 2) {
+        g_application_activate(app);
+        return 0;
+    }
+
+    if (!g_application_command_line_get_is_remote(cmdline)) {
+        g_application_command_line_printerr(cmdline, "wwwidgets is not running\n");
+        return 1;
+    }
+
+    return store_command(state, cmdline, argc - 1, argv + 1);
+}
+
+int main(int argc, char **argv) {
+    log_init();
+
+    AppState state = { 0 };
+
+    GtkApplication *app = gtk_application_new(APP_ID, G_APPLICATION_HANDLES_COMMAND_LINE);
+    g_signal_connect(app, "startup", G_CALLBACK(on_startup), &state);
     g_signal_connect(app, "activate", G_CALLBACK(on_activate), &state);
+    g_signal_connect(app, "command-line", G_CALLBACK(on_command_line), &state);
 
     gint status = g_application_run(G_APPLICATION(app), argc, argv);
 
-    state_clear(&state);
+    if (state.config)
+        state_clear(&state);
+
     g_object_unref(app);
+
 
     return status;
 }

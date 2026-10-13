@@ -27,11 +27,14 @@ typedef struct {
     gint margin[GTK_LAYER_SHELL_EDGE_ENTRY_NUMBER];
     ExclusiveMode exclusive;
     int exclusive_px;
+    GtkLayerShellKeyboardMode keyboard;
+    gchar *visible_when;
 } WidgetConfig;
 
 static inline void widget_config_free(WidgetConfig *w) {
     g_free(w->path);
     g_free(w->namespace);
+    g_free(w->visible_when);
     g_strfreev(w->monitors);
     g_free(w);
 }
@@ -43,6 +46,7 @@ typedef struct {
     gboolean workspaces;
     gboolean notifications;
     gboolean tray;
+    gboolean audio;
     gboolean bluetooth;
     gboolean network;
     gboolean battery;
