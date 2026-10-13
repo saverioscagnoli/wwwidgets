@@ -11,6 +11,7 @@ struct ext_workspace_manager_v1;
 
 typedef struct Tray Tray;
 typedef struct Audio Audio;
+typedef struct BluetoothAgent BluetoothAgent;
 
 typedef struct {
     Config *config;
@@ -27,6 +28,8 @@ typedef struct {
     GPtrArray *notifications;
     Tray *tray;
     Audio *audio;
+    GDBusObjectManager *bluez;
+    BluetoothAgent *bt_agent;
     GDBusProxy *upower;
 
 } AppState;

@@ -8,9 +8,9 @@
 #include "store.h"
 #include "audio.h"
 #include "battery.h"
+#include "bluetooth.h"
 #include "notifications.h"
 #include "tray.h"
-#include "webkit/WebKitUserContentManager.h"
 #include "workspace.h"
 
 static const char *SHIM =
@@ -62,6 +62,18 @@ static const char *SHIM =
     "      setVolume: (device, volume) => call('audio.setVolume', { device, volume }),"
     "      setMute: (device, muted) => call('audio.setMute', { device, muted }),"
     "      onChange: (cb) => on('audio', cb),"
+    "    },"
+    "    bluetooth: {"
+    "      get: () => call('bluetooth.get'),"
+    "      setPowered: (powered) => call('bluetooth.setPowered', { powered }),"
+    "      scan: (on = true) => call('bluetooth.scan', { on }),"
+    "      connect: (path) => call('bluetooth.connect', { path }),"
+    "      disconnect: (path) => call('bluetooth.disconnect', { path }),"
+    "      onChange: (cb) => on('bluetooth', cb),"
+    "      pair: (path) => call('bluetooth.pair', { path }),"
+    "      reply: (value) => call('bluetooth.reply', { accept: true, value: String(value ?? '') }),"
+    "      reject: () => call('bluetooth.reply', { accept: false, value: '' }),"
+    "      onRequest: (cb) => on('bluetooth.request', cb),"
     "    },"
     "    battery: {"
     "      get: () => call('battery.get'),"
@@ -307,6 +319,50 @@ static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *m
             webkit_script_message_reply_return_value(reply, ok);
         else
             webkit_script_message_reply_return_error_message(reply, "expected sink or source");
+    } else if (g_str_equal(cmd, "bluetooth.get")) {
+        if (!state->bluez)
+            return webkit_script_message_reply_return_error_message(reply, "bluetooth is disabled"), TRUE;
+
+        g_autoptr(GVariant) snapshot = bluetooth_snapshot(state);
+        reply_variant(reply, ctx, snapshot);
+    } else if (g_str_equal(cmd, "bluetooth.setPowered") || g_str_equal(cmd, "bluetooth.scan")) {
+        gboolean powered = g_str_equal(cmd, "bluetooth.setPowered");
+        g_autoptr(JSCValue) on_value = jsc_value_object_get_property(message, powered ? "powered" : "on");
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+        gboolean on = jsc_value_to_boolean(on_value);
+
+        if (state->bluez && (powered ? bluetooth_set_powered(state, on) : bluetooth_scan(state, on)))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no bluetooth adapter");
+    } else if (g_str_equal(cmd, "bluetooth.connect") || g_str_equal(cmd, "bluetooth.disconnect")) {
+        g_autoptr(JSCValue) path_value = jsc_value_object_get_property(message, "path");
+        g_autofree gchar *path = jsc_value_to_string(path_value);
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (state->bluez && bluetooth_connect(state, path, g_str_equal(cmd, "bluetooth.connect")))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no such device");
+    } else if (g_str_equal(cmd, "bluetooth.pair")) {
+        g_autoptr(JSCValue) path_value = jsc_value_object_get_property(message, "path");
+        g_autofree gchar *path = jsc_value_to_string(path_value);
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (state->bluez && bluetooth_pair(state, path))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no such device");
+    } else if (g_str_equal(cmd, "bluetooth.reply")) {
+        g_autoptr(JSCValue) accept_value = jsc_value_object_get_property(message, "accept");
+        g_autoptr(JSCValue) value_value = jsc_value_object_get_property(message, "value");
+        g_autofree gchar *value = jsc_value_to_string(value_value);
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (bluetooth_reply(state, jsc_value_to_boolean(accept_value), value))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no pending request");
     } else if (g_str_equal(cmd, "window.setInputRegion") || g_str_equal(cmd, "window.setKeyboard")) {
         g_autoptr(JSCValue) win_value = jsc_value_object_get_property(message, "win");
         g_autofree gchar *win = jsc_value_to_string(win_value);
@@ -434,6 +490,9 @@ void state_init(AppState *state) {
     if (state->config->audio)
         audio_init(state);
 
+    if (state->config->bluetooth)
+        bluetooth_init(state);
+
     if (state->config->battery)
         battery_init(state);
 }
@@ -448,6 +507,7 @@ void state_clear(AppState *state) {
     notifications_clear(state);
     tray_clear(state);
     audio_clear(state);
+    bluetooth_clear(state);
     store_clear(state);
     g_clear_object(&state->upower);
     g_debug("state cleared");

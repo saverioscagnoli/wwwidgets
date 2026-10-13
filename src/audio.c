@@ -20,6 +20,7 @@ struct Audio {
     AudioDevice sink;
     AudioDevice source;
     guint refresh_id;
+    guint reconnect_id;
 };
 
 static void op_unref(pa_operation *o) {
@@ -72,7 +73,7 @@ GVariant *audio_snapshot(AppState *state) {
 static void audio_push(AppState *state) {
     g_autoptr(GVariant) snap = audio_snapshot(state);
 
-    for (guint i = 0; state->views->len; i++) {
+    for (guint i = 0; i < state->views->len; i++) {
         push_event(g_ptr_array_index(state->views, i), "audio", snap);
     }
 }
@@ -131,8 +132,22 @@ static void on_subscribe(pa_context *c, pa_subscription_event_type_t t, uint32_t
         state->audio->refresh_id = g_idle_add(refresh, state);
 }
 
+static void audio_connect(AppState *state);
+
+static gboolean reconnect(gpointer user_data) {
+    AppState *state = user_data;
+
+    state->audio->reconnect_id = 0;
+    pa_context_unref(state->audio->ctx);
+    audio_connect(state);
+    g_debug("audio is reconnecting");
+
+    return G_SOURCE_REMOVE;
+}
+
 static void on_context_state(pa_context *c, void *user_data) {
     AppState *state = user_data;
+    Audio *a = state->audio;
 
     switch (pa_context_get_state(c)) {
         case PA_CONTEXT_READY:
@@ -143,23 +158,34 @@ static void on_context_state(pa_context *c, void *user_data) {
             break;
         case PA_CONTEXT_FAILED:
             g_warning("audio: %s", pa_strerror(pa_context_errno(c)));
+            pa_context_set_state_callback(c, NULL, NULL);
+            g_clear_handle_id(&a->refresh_id, g_source_remove);
+            device_clear(&a->sink);
+            device_clear(&a->source);
+            audio_push(state);
+
+            if (a->reconnect_id == 0)
+                a->reconnect_id = g_timeout_add_seconds(1, reconnect, state);
             break;
         default:
             break;
     }
 }
 
-void audio_init(AppState *state) {
-    Audio *a = g_new0(Audio, 1);
+static void audio_connect(AppState *state) {
+    Audio *a = state->audio;
 
-    a->loop = pa_glib_mainloop_new(NULL);
     a->ctx = pa_context_new(pa_glib_mainloop_get_api(a->loop), "wwwidgets");
-    state->audio = a;
-
     pa_context_set_state_callback(a->ctx, on_context_state, state);
 
     if (pa_context_connect(a->ctx, NULL, PA_CONTEXT_NOFAIL, NULL) < 0)
         g_warning("audio: %s", pa_strerror(pa_context_errno(a->ctx)));
+}
+
+void audio_init(AppState *state) {
+    state->audio = g_new0(Audio, 1);
+    state->audio->loop = pa_glib_mainloop_new(NULL);
+    audio_connect(state);
 }
 
 void audio_clear(AppState *state) {
@@ -169,6 +195,7 @@ void audio_clear(AppState *state) {
         return;
 
     g_clear_handle_id(&a->refresh_id, g_source_remove);
+    g_clear_handle_id(&a->reconnect_id, g_source_remove);
     pa_context_set_state_callback(a->ctx, NULL, NULL);
     pa_context_disconnect(a->ctx);
     pa_context_unref(a->ctx);
