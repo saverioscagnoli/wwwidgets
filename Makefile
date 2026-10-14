@@ -10,6 +10,9 @@ TARGET  := wwwidgets
 SRC     := $(wildcard src/*.c)
 OBJ     := $(SRC:src/%.c=build/%.o) build/resources.o
 OBJ     += build/ext-workspace-v1-protocol.o
+TL_XML  := protocol/wlr-foreign-toplevel-management-unstable-v1.xml
+TL_NAME := wlr-foreign-toplevel-management-unstable-v1
+OBJ     += build/$(TL_NAME)-protocol.o
 
 RES_XML := web/resources.gresource.xml
 RES_DEP := $(shell glib-compile-resources --sourcedir web --generate-dependencies $(RES_XML))
@@ -38,6 +41,17 @@ build/ext-workspace-v1-protocol.o: build/ext-workspace-v1-protocol.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 build/workspace.o: build/ext-workspace-v1-client-protocol.h
+
+build/$(TL_NAME)-client-protocol.h: $(TL_XML) | build
+	wayland-scanner client-header $< $@
+
+build/$(TL_NAME)-protocol.c: $(TL_XML) | build
+	wayland-scanner private-code $< $@
+
+build/$(TL_NAME)-protocol.o: build/$(TL_NAME)-protocol.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+build/toplevel.o: build/$(TL_NAME)-client-protocol.h
 
 build:
 	mkdir -p build

@@ -50,6 +50,8 @@ typedef struct {
     gboolean bluetooth;
     gboolean network;
     gboolean battery;
+    gboolean exec;
+    gboolean toplevels;
     GPtrArray *widgets;
 } Config;
 

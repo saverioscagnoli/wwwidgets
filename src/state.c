@@ -9,8 +9,11 @@
 #include "audio.h"
 #include "battery.h"
 #include "bluetooth.h"
+#include "image.h"
 #include "network.h"
+#include "process.h"
 #include "notifications.h"
+#include "toplevel.h"
 #include "tray.h"
 #include "workspace.h"
 
@@ -88,6 +91,28 @@ static const char *SHIM =
     "      get: () => call('battery.get'),"
     "      onChange: (cb) => on('battery', cb),"
     "    },"
+    "    toplevels: {"
+    "      list: () => call('toplevels.list'),"
+    "      activate: (id) => call('toplevels.action', { id, action: 'activate' }),"
+    "      close: (id) => call('toplevels.action', { id, action: 'close' }),"
+    "      setMinimized: (id, on) => call('toplevels.action', { id, action: on ? 'minimize' : 'unminimize' }),"
+    "      onChange: (cb) => on('toplevels', cb),"
+    "    },"
+    "    exec: (command, args = []) => call('exec', { argv: [command, ...args] }),"
+    "    spawn: async (command, args = [], { onStdout, onStderr, onExit } = {}) => {"
+    "      const id = await call('spawn', { argv: [command, ...args] });"
+    "      const off = on('process', (d) => {"
+    "        if (d.id !== id) return;"
+    "        if (d.type === 'stdout') onStdout?.(d.data);"
+    "        else if (d.type === 'stderr') onStderr?.(d.data);"
+    "        else { off(); onExit?.(d.data); }"
+    "      });"
+    "      return {"
+    "        id,"
+    "        write: (data) => call('process.write', { id, data: String(data) }),"
+    "        kill: (signal = 15) => call('process.kill', { id, signal }),"
+    "      };"
+    "    },"
     "  };"
     "})();";
 
@@ -158,6 +183,22 @@ static GtkWindow *find_window(AppState *state, const gchar *win) {
     }
 
     return NULL;
+}
+
+static GStrv jsc_to_strv(JSCValue *array) {
+    if (!jsc_value_is_array(array))
+        return NULL;
+
+    g_autoptr(JSCValue) len_value = jsc_value_object_get_property(array, "length");
+    gint32 len = jsc_value_to_int32(len_value);
+    GStrv strv = g_new0(gchar *, len + 1);
+
+    for (gint32 i = 0; i < len; i++) {
+        g_autoptr(JSCValue) item = jsc_value_object_get_property_at_index(array, i);
+        strv[i] = jsc_value_to_string(item);
+    }
+
+    return strv;
 }
 
 gboolean window_set_input_region(GtkWindow *window, const gchar *json) {
@@ -420,6 +461,62 @@ static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *m
 
         if (!state->network || !network_connect(state, path, password, on_network_connect, p))
             on_network_connect("no wifi device or access point", p);
+    } else if (g_str_equal(cmd, "exec")) {
+        g_autoptr(JSCValue) argv_value = jsc_value_object_get_property(message, "argv");
+        g_auto(GStrv) argv = jsc_to_strv(argv_value);
+        PendingReply *p = g_new0(PendingReply, 1);
+
+        p->reply = webkit_script_message_reply_ref(reply);
+        p->ctx = g_object_ref(ctx);
+
+        if (!state->processes || !argv || !argv[0])
+            on_tray_menu(NULL, "exec is disabled or no command given", p);
+        else
+            process_exec(state, (const gchar *const *)argv, on_tray_menu, p);
+    } else if (g_str_equal(cmd, "spawn")) {
+        g_autoptr(JSCValue) argv_value = jsc_value_object_get_property(message, "argv");
+        g_auto(GStrv) argv = jsc_to_strv(argv_value);
+        g_autoptr(GError) err = NULL;
+        guint32 id = state->processes && argv && argv[0] ? process_spawn(state, (const gchar *const *)argv, &err) : 0;
+
+        if (id) {
+            g_autoptr(JSCValue) result = jsc_value_new_number(ctx, id);
+            webkit_script_message_reply_return_value(reply, result);
+        } else {
+            webkit_script_message_reply_return_error_message(reply, err ? err->message : "exec is disabled or no command given");
+        }
+    } else if (g_str_equal(cmd, "process.write")) {
+        g_autoptr(JSCValue) id_value = jsc_value_object_get_property(message, "id");
+        g_autoptr(JSCValue) data_value = jsc_value_object_get_property(message, "data");
+        g_autofree gchar *data = jsc_value_to_string(data_value);
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (state->processes && process_write(state, (guint32)jsc_value_to_int32(id_value), data))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no such process");
+    } else if (g_str_equal(cmd, "process.kill")) {
+        g_autoptr(JSCValue) id_value = jsc_value_object_get_property(message, "id");
+        g_autoptr(JSCValue) signal_value = jsc_value_object_get_property(message, "signal");
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (state->processes && process_kill(state, (guint32)jsc_value_to_int32(id_value), jsc_value_to_int32(signal_value)))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no such process");
+    } else if (g_str_equal(cmd, "toplevels.list")) {
+        g_autoptr(GVariant) list = toplevel_list(state);
+        reply_variant(reply, ctx, list);
+    } else if (g_str_equal(cmd, "toplevels.action")) {
+        g_autoptr(JSCValue) id_value = jsc_value_object_get_property(message, "id");
+        g_autoptr(JSCValue) action_value = jsc_value_object_get_property(message, "action");
+        g_autofree gchar *action = jsc_value_to_string(action_value);
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (toplevel_action(state, (guint32)jsc_value_to_int32(id_value), action))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no such window or action");
     } else if (g_str_equal(cmd, "window.setInputRegion") || g_str_equal(cmd, "window.setKeyboard")) {
         g_autoptr(JSCValue) win_value = jsc_value_object_get_property(message, "win");
         g_autofree gchar *win = jsc_value_to_string(win_value);
@@ -497,10 +594,29 @@ static gboolean widget_serve(AppState *state, WebKitURISchemeRequest *request, c
     return TRUE;
 }
 
+// wwwidgets://icon/<name> for a themed icon, wwwidgets://icon//abs/path or wwwidgets://icon/file:///... for a file
+static gboolean icon_serve(WebKitURISchemeRequest *request, const gchar *path) {
+    if (*path == '/')
+        path++;
+
+    Image img = { 0 };
+
+    if (!image_load_icon(&img, path, NULL))
+        return FALSE;
+
+    image_serve(&img, request);
+    image_clear(&img);
+
+    return TRUE;
+}
+
 static void on_scheme_request(WebKitURISchemeRequest *request, gpointer user_data) {
     AppState *state = user_data;
     g_autoptr(GUri) uri = g_uri_parse(webkit_uri_scheme_request_get_uri(request), G_URI_FLAGS_NONE, NULL);
     const gchar *host = uri ? g_uri_get_host(uri) : NULL;
+
+    if (host && g_str_equal(host, "icon") && icon_serve(request, g_uri_get_path(uri)))
+        return;
 
     if (host && g_str_equal(host, "notifications") && notifications_serve(state, request, g_uri_get_path(uri)))
         return;
@@ -555,6 +671,12 @@ void state_init(AppState *state) {
 
     if (state->config->battery)
         battery_init(state);
+
+    if (state->config->exec)
+        process_init(state);
+
+    if (state->config->toplevels)
+        toplevels_init(state);
 }
 
 void state_clear(AppState *state) {
@@ -571,6 +693,8 @@ void state_clear(AppState *state) {
     network_clear(state);
     store_clear(state);
     g_clear_object(&state->upower);
+    process_clear(state);
+    g_clear_pointer(&state->toplevels, g_ptr_array_unref);
     g_debug("state cleared");
 }
 

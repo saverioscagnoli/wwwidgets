@@ -8,6 +8,7 @@
 #include "config.h"
 
 struct ext_workspace_manager_v1;
+struct zwlr_foreign_toplevel_manager_v1;
 
 typedef struct Tray Tray;
 typedef struct Audio Audio;
@@ -33,6 +34,11 @@ typedef struct {
     BluetoothAgent *bt_agent;
     GDBusProxy *upower;
     Network *network;
+    GHashTable *processes;
+    guint32 process_next_id;
+    struct zwlr_foreign_toplevel_manager_v1 *tl_manager;
+    GPtrArray *toplevels;
+    guint32 tl_next_id;
 } AppState;
 
 void push_event(WebKitWebView *view, const gchar *name, GVariant *detail);

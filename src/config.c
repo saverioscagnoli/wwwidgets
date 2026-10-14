@@ -2,6 +2,7 @@
 #include <json-glib/json-glib.h>
 
 #include "config.h"
+#include "gtk/gtk.h"
 
 #define BOOL_STR(b) ((b) ? "enabled" : "disabled")
 
@@ -350,6 +351,8 @@ void config_parse(Config *config, const gchar *path) {
     gboolean bluetooth = json_object_get_boolean_member_with_default(root, "bluetooth", FALSE);
     gboolean network = json_object_get_boolean_member_with_default(root, "network", FALSE);
     gboolean battery = json_object_get_boolean_member_with_default(root, "battery", FALSE);
+    gboolean exec = json_object_get_boolean_member_with_default(root, "exec", FALSE);
+    gboolean toplevels = json_object_get_boolean_member_with_default(root, "toplevels", FALSE);
 
     config->devtools = devtools;
     config->workspaces = workspaces;
@@ -359,6 +362,8 @@ void config_parse(Config *config, const gchar *path) {
     config->bluetooth = bluetooth;
     config->network = network;
     config->battery = battery;
+    config->exec = exec;
+    config->toplevels = toplevels;
 
     g_debug("devtools: %s", BOOL_STR(devtools));
     g_debug("workspaces: %s", BOOL_STR(workspaces));
@@ -368,6 +373,8 @@ void config_parse(Config *config, const gchar *path) {
     g_debug("bluetooth: %s", BOOL_STR(bluetooth));
     g_debug("network: %s", BOOL_STR(network));
     g_debug("battery: %s", BOOL_STR(battery));
+    g_debug("exec: %s", BOOL_STR(exec));
+    g_debug("toplevels protocol: %s", BOOL_STR(toplevels));
 
     config->widgets = g_ptr_array_new_with_free_func((GDestroyNotify)widget_config_free);
 
