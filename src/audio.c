@@ -1,10 +1,11 @@
-#include "state.h"
 #include <glib.h>
 #include <iso646.h>
 #include <pulse/def.h>
 #include <pulse/pulseaudio.h>
 #include <pulse/glib-mainloop.h>
 #include <stdint.h>
+
+#include "state.h"
 
 typedef struct {
     gchar *name;

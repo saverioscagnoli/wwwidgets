@@ -2,10 +2,8 @@
 #include <glib.h>
 #include <wayland-client-protocol.h>
 #include <wayland-util.h>
+#include <ext-workspace-v1-client-protocol.h>
 
-#include "ext-workspace-v1-client-protocol.h"
-#include "gdk/gdk.h"
-#include "glibconfig.h"
 #include "state.h"
 #include "workspace.h"
 

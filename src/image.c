@@ -1,8 +1,6 @@
 #include <gio/gio.h>
 
 #include "image.h"
-#include "gdk/gdk.h"
-#include "glib.h"
 
 void image_clear(Image *img) {
     g_clear_pointer(&img->bytes, g_bytes_unref);

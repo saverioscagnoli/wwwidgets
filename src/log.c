@@ -1,7 +1,7 @@
-#include "log.h"
-
 #include <glib.h>
 #include <stdio.h>
+
+#include "log.h"
 
 static GLogWriterOutput log_writer(GLogLevelFlags level, const GLogField *fields, gsize n_fields,
                                    gpointer user_data) {

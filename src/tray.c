@@ -1,9 +1,6 @@
 #include <gtk/gtk.h>
 #include <unistd.h>
 
-#include "gio/gio.h"
-#include "glib.h"
-#include "glibconfig.h"
 #include "image.h"
 #include "state.h"
 #include "tray.h"

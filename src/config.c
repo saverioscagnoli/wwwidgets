@@ -1,9 +1,7 @@
-#include "config.h"
-#include "glib-object.h"
-#include "glibconfig.h"
-#include "gtk4-layer-shell.h"
 #include <glib.h>
 #include <json-glib/json-glib.h>
+
+#include "config.h"
 
 #define BOOL_STR(b) ((b) ? "enabled" : "disabled")
 

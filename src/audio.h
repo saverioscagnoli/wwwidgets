@@ -1,6 +1,5 @@
 #pragma once
 
-#include "glib.h"
 #include "state.h"
 
 void audio_init(AppState *state);

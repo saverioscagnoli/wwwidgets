@@ -12,6 +12,7 @@ struct ext_workspace_manager_v1;
 typedef struct Tray Tray;
 typedef struct Audio Audio;
 typedef struct BluetoothAgent BluetoothAgent;
+typedef struct Network Network;
 
 typedef struct {
     Config *config;
@@ -31,7 +32,7 @@ typedef struct {
     GDBusObjectManager *bluez;
     BluetoothAgent *bt_agent;
     GDBusProxy *upower;
-
+    Network *network;
 } AppState;
 
 void push_event(WebKitWebView *view, const gchar *name, GVariant *detail);

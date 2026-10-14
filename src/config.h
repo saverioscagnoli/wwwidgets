@@ -1,7 +1,7 @@
 #pragma once
 
-#include "gtk4-layer-shell.h"
 #include <glib.h>
+#include <gtk4-layer-shell.h>
 
 
 typedef struct {

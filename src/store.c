@@ -1,5 +1,4 @@
 #include <json-glib/json-glib.h>
-
 #include <gtk4-layer-shell.h>
 
 #include "gio/gio.h"

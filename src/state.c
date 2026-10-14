@@ -9,6 +9,7 @@
 #include "audio.h"
 #include "battery.h"
 #include "bluetooth.h"
+#include "network.h"
 #include "notifications.h"
 #include "tray.h"
 #include "workspace.h"
@@ -75,6 +76,14 @@ static const char *SHIM =
     "      reject: () => call('bluetooth.reply', { accept: false, value: '' }),"
     "      onRequest: (cb) => on('bluetooth.request', cb),"
     "    },"
+    "    network: {"
+    "      get: () => call('network.get'),"
+    "      setWifi: (enabled) => call('network.setWifi', { enabled }),"
+    "      scan: () => call('network.scan'),"
+    "      connect: (path, password) => call('network.connect', { path, password: password ?? null }),"
+    "      disconnect: () => call('network.disconnect'),"
+    "      onChange: (cb) => on('network', cb),"
+    "    },"
     "    battery: {"
     "      get: () => call('battery.get'),"
     "      onChange: (cb) => on('battery', cb),"
@@ -100,6 +109,21 @@ static void on_tray_menu(GVariant *menu, const gchar *error, gpointer user_data)
         reply_variant(p->reply, p->ctx, menu);
     else
         webkit_script_message_reply_return_error_message(p->reply, error);
+
+    webkit_script_message_reply_unref(p->reply);
+    g_object_unref(p->ctx);
+    g_free(p);
+}
+
+static void on_network_connect(const gchar *error, gpointer user_data) {
+    PendingReply *p = user_data;
+
+    if (error) {
+        webkit_script_message_reply_return_error_message(p->reply, error);
+    } else {
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(p->ctx, TRUE);
+        webkit_script_message_reply_return_value(p->reply, ok);
+    }
 
     webkit_script_message_reply_unref(p->reply);
     g_object_unref(p->ctx);
@@ -363,6 +387,39 @@ static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *m
             webkit_script_message_reply_return_value(reply, ok);
         else
             webkit_script_message_reply_return_error_message(reply, "no pending request");
+    } else if (g_str_equal(cmd, "network.get")) {
+        if (!state->network)
+            return webkit_script_message_reply_return_error_message(reply, "network is disabled"), TRUE;
+
+        g_autoptr(GVariant) snapshot = network_snapshot(state);
+        reply_variant(reply, ctx, snapshot);
+    } else if (g_str_equal(cmd, "network.setWifi")) {
+        g_autoptr(JSCValue) enabled_value = jsc_value_object_get_property(message, "enabled");
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (state->network && network_set_wifi(state, jsc_value_to_boolean(enabled_value)))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "network is disabled");
+    } else if (g_str_equal(cmd, "network.scan") || g_str_equal(cmd, "network.disconnect")) {
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (state->network && (g_str_equal(cmd, "network.scan") ? network_scan(state) : network_disconnect(state)))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no wifi device");
+    } else if (g_str_equal(cmd, "network.connect")) {
+        g_autoptr(JSCValue) path_value = jsc_value_object_get_property(message, "path");
+        g_autoptr(JSCValue) password_value = jsc_value_object_get_property(message, "password");
+        g_autofree gchar *path = jsc_value_to_string(path_value);
+        g_autofree gchar *password = jsc_value_is_string(password_value) ? jsc_value_to_string(password_value) : NULL;
+        PendingReply *p = g_new0(PendingReply, 1);
+
+        p->reply = webkit_script_message_reply_ref(reply);
+        p->ctx = g_object_ref(ctx);
+
+        if (!state->network || !network_connect(state, path, password, on_network_connect, p))
+            on_network_connect("no wifi device or access point", p);
     } else if (g_str_equal(cmd, "window.setInputRegion") || g_str_equal(cmd, "window.setKeyboard")) {
         g_autoptr(JSCValue) win_value = jsc_value_object_get_property(message, "win");
         g_autofree gchar *win = jsc_value_to_string(win_value);
@@ -493,6 +550,9 @@ void state_init(AppState *state) {
     if (state->config->bluetooth)
         bluetooth_init(state);
 
+    if (state->config->network)
+        network_init(state);
+
     if (state->config->battery)
         battery_init(state);
 }
@@ -508,6 +568,7 @@ void state_clear(AppState *state) {
     tray_clear(state);
     audio_clear(state);
     bluetooth_clear(state);
+    network_clear(state);
     store_clear(state);
     g_clear_object(&state->upower);
     g_debug("state cleared");
