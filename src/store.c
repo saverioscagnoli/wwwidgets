@@ -25,6 +25,13 @@ static gboolean json_truthy(const gchar *json) {
 void store_apply_visibility(AppState *state, GtkWindow *window) {
     const gchar *key = g_object_get_data(G_OBJECT(window), "visible-when");
     gboolean open = json_truthy(store_get(state, key));
+
+    if (GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "hide")) == HIDE_UNMAP) {
+        g_debug("state: %s window for %s", open ? "mapping" : "unmapping", key);
+        gtk_widget_set_visible(GTK_WIDGET(window), open);
+        return;
+    }
+
     GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(window));
 
     if (surface == NULL)
@@ -32,13 +39,17 @@ void store_apply_visibility(AppState *state, GtkWindow *window) {
 
     g_debug("state: %s window for %s", open ? "enabling" : "disabling", key);
 
+    GtkLayerShellKeyboardMode keyboard = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "keyboard"));
+    GtkLayerShellKeyboardMode want = open || keyboard != GTK_LAYER_SHELL_KEYBOARD_MODE_EXCLUSIVE ? keyboard : GTK_LAYER_SHELL_KEYBOARD_MODE_NONE;
+
+    if (gtk_layer_get_keyboard_mode(window) != want)
+        gtk_layer_set_keyboard_mode(window, want);
+
     if (open) {
         gdk_surface_set_input_region(surface, NULL);
-        gtk_layer_set_keyboard_mode(window, GPOINTER_TO_INT(g_object_get_data(G_OBJECT(window), "keyboard")));
     } else {
         cairo_region_t *empty = cairo_region_create();
 
-        gtk_layer_set_keyboard_mode(window, GTK_LAYER_SHELL_KEYBOARD_MODE_NONE);
         gdk_surface_set_input_region(surface, empty);
         cairo_region_destroy(empty);
     }

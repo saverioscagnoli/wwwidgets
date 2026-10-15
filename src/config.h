@@ -15,6 +15,11 @@ typedef enum {
     EXCLUSIVE_FIXED,
 } ExclusiveMode;
 
+typedef enum {
+    HIDE_INPUT,
+    HIDE_UNMAP,
+} HideMode;
+
 typedef struct {
     gchar *path;
     gchar *namespace;
@@ -29,6 +34,7 @@ typedef struct {
     int exclusive_px;
     GtkLayerShellKeyboardMode keyboard;
     gchar *visible_when;
+    HideMode hide;
 } WidgetConfig;
 
 static inline void widget_config_free(WidgetConfig *w) {
@@ -43,6 +49,7 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(WidgetConfig, widget_config_free)
 
 typedef struct {
     gboolean devtools;
+    gboolean hot_reload;
     gboolean workspaces;
     gboolean notifications;
     gboolean tray;
@@ -56,7 +63,7 @@ typedef struct {
 } Config;
 
 
-void config_parse(Config *config, const gchar *path);
+gboolean config_parse(Config *config, const gchar *path, GError **error);
 
 static inline void config_free(Config *c) {
     if (c->widgets != NULL) {

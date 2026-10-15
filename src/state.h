@@ -10,14 +10,20 @@
 struct ext_workspace_manager_v1;
 struct zwlr_foreign_toplevel_manager_v1;
 
+typedef struct Reload Reload;
 typedef struct Tray Tray;
 typedef struct Audio Audio;
 typedef struct BluetoothAgent BluetoothAgent;
 typedef struct Network Network;
 
 typedef struct {
+    GtkApplication *app;
     Config *config;
+    gchar *config_path;
+    Reload *reload;
     GListModel *monitors;
+    GHashTable *monitor_windows;
+    guint monitors_sync_id;
     WebKitUserContentManager *content_manager;
     GPtrArray *views;
     GPtrArray *windows;
@@ -46,5 +52,3 @@ void push_event_json(WebKitWebView *view, const gchar *name, const gchar *json);
 gboolean window_set_input_region(GtkWindow *window, const gchar *json);
 void state_init(AppState *state);
 void state_clear(AppState *state);
-
-void on_monitors_changed(GListModel *list, guint position, guint removed, guint added, gpointer user_data);

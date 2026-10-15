@@ -7,6 +7,7 @@ LDLIBS  += $(shell pkg-config --libs $(PKGS))
 
 
 TARGET  := wwwidgets
+PREFIX  ?= $(HOME)/.local
 SRC     := $(wildcard src/*.c)
 OBJ     := $(SRC:src/%.c=build/%.o) build/resources.o
 OBJ     += build/ext-workspace-v1-protocol.o
@@ -63,9 +64,19 @@ compile_flags.txt: Makefile
 run: all
 	./$(TARGET)
 
+release:
+	$(MAKE) clean
+	CFLAGS="-O2 -DNDEBUG" LDFLAGS="-s" $(MAKE) all
+
+install: $(TARGET)
+	install -Dm755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/$(TARGET)
+
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/$(TARGET)
+
 clean:
 	rm -rf build $(TARGET) compile_flags.txt
 
-.PHONY: all run clean
+.PHONY: all run release install uninstall clean
 
 -include $(OBJ:.o=.d)

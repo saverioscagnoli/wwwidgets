@@ -1,6 +1,7 @@
 #include <glib.h>
 #include <gio/gio.h>
 
+#include "bluetooth.h"
 #include "state.h"
 
 #define AGENT_PATH "/dev/svscagn/wwwidgets/agent"
@@ -193,11 +194,48 @@ gboolean bluetooth_scan(AppState *state, gboolean on) {
     if (!adapter)
         return FALSE;
 
-    call(adapter, "org.bluez.Adapter1", on ? "StartDiscovery" : "StopDiscovering", NULL);
+    call(adapter, "org.bluez.Adapter1", on ? "StartDiscovery" : "StopDiscovery", NULL);
     return TRUE;
 }
 
-gboolean bluetooth_connect(AppState *state, const gchar *path, gboolean connect) {
+typedef struct {
+    const gchar *method;
+    gchar *path;
+    BluetoothCallback callback;
+    gpointer user_data;
+} PendingCall;
+
+static PendingCall *pending_new(const gchar *method, const gchar *path, BluetoothCallback callback, gpointer user_data) {
+    PendingCall *c = g_new0(PendingCall, 1);
+
+    c->method = method;
+    c->path = g_strdup(path);
+    c->callback = callback;
+    c->user_data = user_data;
+    return c;
+}
+
+static void pending_finish(PendingCall *c, GError *err) {
+    if (err) {
+        g_dbus_error_strip_remote_error(err);
+        g_warning("bluetooth: %s: %s", c->method, err->message);
+    }
+
+    if (c->callback)
+        c->callback(err ? err->message : NULL, c->user_data);
+
+    g_free(c->path);
+    g_free(c);
+}
+
+static void on_pending_done(GObject *source, GAsyncResult *res, gpointer user_data) {
+    g_autoptr(GError) err = NULL;
+    g_autoptr(GVariant) result = g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), res, &err);
+
+    pending_finish(user_data, result ? NULL : err);
+}
+
+gboolean bluetooth_connect(AppState *state, const gchar *path, gboolean connect, BluetoothCallback callback, gpointer user_data) {
     if (!g_variant_is_object_path(path))
         return FALSE;
 
@@ -206,26 +244,30 @@ gboolean bluetooth_connect(AppState *state, const gchar *path, gboolean connect)
     if (!device)
         return FALSE;
 
-    call(G_DBUS_PROXY(device), "org.bluez.Device1", connect ? "Connect" : "Disconnect", NULL);
+    const gchar *method = connect ? "Connect" : "Disconnect";
+
+    g_dbus_connection_call(g_dbus_proxy_get_connection(G_DBUS_PROXY(device)), "org.bluez", path, "org.bluez.Device1", method, NULL, NULL,
+                           G_DBUS_CALL_FLAGS_NONE, 60000, NULL, on_pending_done, pending_new(method, path, callback, user_data));
     return TRUE;
 }
 
 static void on_pair_done(GObject *source, GAsyncResult *res, gpointer user_data) {
-    g_autofree gchar *path = user_data;
+    PendingCall *c = user_data;
     g_autoptr(GError) err = NULL;
     g_autoptr(GVariant) result = g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), res, &err);
     GDBusConnection *bus = G_DBUS_CONNECTION(source);
 
     if (!result) {
-        g_warning("bluetooth: Pair: %s", err->message);
+        pending_finish(c, err);
         return;
     }
 
-    g_dbus_connection_call(bus, "org.bluez", path, "org.freedesktop.DBus.Properties", "Set", g_variant_new("(ssv)", "org.bluez.Device1", "Trusted", g_variant_new_boolean(TRUE)), NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, on_call_done, "Trusted");
-    g_dbus_connection_call(bus, "org.bluez", path, "org.bluez.Device1", "Connect", NULL, NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, on_call_done, "Connect");
+    g_dbus_connection_call(bus, "org.bluez", c->path, "org.freedesktop.DBus.Properties", "Set", g_variant_new("(ssv)", "org.bluez.Device1", "Trusted", g_variant_new_boolean(TRUE)), NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, on_call_done, "Trusted");
+    c->method = "Connect";
+    g_dbus_connection_call(bus, "org.bluez", c->path, "org.bluez.Device1", "Connect", NULL, NULL, G_DBUS_CALL_FLAGS_NONE, 60000, NULL, on_pending_done, c);
 }
 
-gboolean bluetooth_pair(AppState *state, const gchar *path) {
+gboolean bluetooth_pair(AppState *state, const gchar *path, BluetoothCallback callback, gpointer user_data) {
     if (!g_variant_is_object_path(path))
         return FALSE;
 
@@ -234,8 +276,8 @@ gboolean bluetooth_pair(AppState *state, const gchar *path) {
     if (!device)
         return FALSE;
 
-    // Dont timeout
-    g_dbus_connection_call(g_dbus_proxy_get_connection(G_DBUS_PROXY(device)), "org.bluez", path, "org.bluez.Device1", "Pair", NULL, NULL, G_DBUS_CALL_FLAGS_NONE, G_MAXINT, NULL, on_pair_done, g_strdup(path));
+    g_dbus_connection_call(g_dbus_proxy_get_connection(G_DBUS_PROXY(device)), "org.bluez", path, "org.bluez.Device1", "Pair", NULL, NULL,
+                           G_DBUS_CALL_FLAGS_NONE, G_MAXINT, NULL, on_pair_done, pending_new("Pair", path, callback, user_data));
     return TRUE;
 }
 

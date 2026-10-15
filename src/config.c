@@ -2,7 +2,6 @@
 #include <json-glib/json-glib.h>
 
 #include "config.h"
-#include "gtk/gtk.h"
 
 #define BOOL_STR(b) ((b) ? "enabled" : "disabled")
 
@@ -333,17 +332,43 @@ static gboolean parse_visible_when(JsonObject *obj, const gchar *key, gchar **ou
     return TRUE;
 }
 
-void config_parse(Config *config, const gchar *path) {
-    g_autoptr(GError) error = NULL;
-    g_autoptr(JsonParser) parser = json_parser_new();
+static gboolean parse_hide(JsonObject *obj, const gchar *key, HideMode *out, GError **error) {
+    *out = HIDE_INPUT;
 
-    if (!json_parser_load_from_file(parser, path, &error)) {
-        g_error("failed to parse: %s\n", error->message);
+    if (!json_object_has_member(obj, key))
+        return TRUE;
+
+    JsonNode *node = json_object_get_member(obj, key);
+    const gchar *s = node_is_string(node) ? json_node_get_string(node) : "";
+
+    if (g_str_equal(s, "input"))      *out = HIDE_INPUT;
+    else if (g_str_equal(s, "unmap")) *out = HIDE_UNMAP;
+    else {
+        g_set_error(error, JSON_PARSER_ERROR, JSON_PARSER_ERROR_INVALID_DATA, "\"%s\": expected \"input\" or \"unmap\"", key);
+        return FALSE;
     }
 
-    JsonObject *root = json_node_get_object(json_parser_get_root(parser));
+    return TRUE;
+}
+
+gboolean config_parse(Config *config, const gchar *path, GError **error) {
+    g_autoptr(JsonParser) parser = json_parser_new();
+
+    if (!json_parser_load_from_file(parser, path, error))
+        return FALSE;
+
+    JsonNode *root_node = json_parser_get_root(parser);
+
+    if (root_node == NULL || !JSON_NODE_HOLDS_OBJECT(root_node)) {
+        g_set_error(error, JSON_PARSER_ERROR, JSON_PARSER_ERROR_INVALID_DATA, "expected a top-level object");
+        return FALSE;
+    }
+
+    JsonObject *root = json_node_get_object(root_node);
+
 
     gboolean devtools = json_object_get_boolean_member_with_default(root, "devtools", FALSE);
+    gboolean hot_reload = json_object_get_boolean_member_with_default(root, "hot_reload", FALSE);
     gboolean workspaces = json_object_get_boolean_member_with_default(root, "workspaces", FALSE);
     gboolean notifications = json_object_get_boolean_member_with_default(root, "notifications", FALSE);
     gboolean tray = json_object_get_boolean_member_with_default(root, "tray", FALSE);
@@ -355,6 +380,7 @@ void config_parse(Config *config, const gchar *path) {
     gboolean toplevels = json_object_get_boolean_member_with_default(root, "toplevels", FALSE);
 
     config->devtools = devtools;
+    config->hot_reload = hot_reload;
     config->workspaces = workspaces;
     config->notifications = notifications;
     config->tray = tray;
@@ -366,6 +392,7 @@ void config_parse(Config *config, const gchar *path) {
     config->toplevels = toplevels;
 
     g_debug("devtools: %s", BOOL_STR(devtools));
+    g_debug("hot reload: %s", BOOL_STR(hot_reload));
     g_debug("workspaces: %s", BOOL_STR(workspaces));
     g_debug("notifications: %s", BOOL_STR(notifications));
     g_debug("tray: %s", BOOL_STR(tray));
@@ -412,7 +439,8 @@ void config_parse(Config *config, const gchar *path) {
                 !parse_margins(obj, "margin", w->margin, &widget_error) ||
                 !parse_exclusive(obj, "exclusive", &w->exclusive, &w->exclusive_px, &widget_error) ||
                 !parse_keyboard(obj, "keyboard", &w->keyboard, &widget_error) ||
-                !parse_visible_when(obj, "visible-when", &w->visible_when, &widget_error)
+                !parse_visible_when(obj, "visible-when", &w->visible_when, &widget_error) ||
+                !parse_hide(obj, "hide", &w->hide, &widget_error)
             ) {
                 g_warning("widgets[%u]: %s, skipping", i, widget_error->message);
                 widget_config_free(w);
@@ -424,8 +452,10 @@ void config_parse(Config *config, const gchar *path) {
     }
 
     if (config->widgets->len == 0) {
-        g_error("couldn't find any widgets");
+        g_set_error(error, JSON_PARSER_ERROR, JSON_PARSER_ERROR_INVALID_DATA, "couldnt find any widgets");
+        return FALSE;
     }
 
     g_info("found and parsed %u widget(s)", config->widgets->len);
+    return TRUE;
 }

@@ -12,6 +12,7 @@
 #include "image.h"
 #include "network.h"
 #include "process.h"
+#include "reload.h"
 #include "notifications.h"
 #include "toplevel.h"
 #include "tray.h"
@@ -65,6 +66,12 @@ static const char *SHIM =
     "      get: () => call('audio.get'),"
     "      setVolume: (device, volume) => call('audio.setVolume', { device, volume }),"
     "      setMute: (device, muted) => call('audio.setMute', { device, muted }),"
+    "      setDefault: (kind, name) => call('audio.setDefault', { kind, name }),"
+    "      setDeviceVolume: (kind, name, volume) => call('audio.setDeviceVolume', { kind, name, volume }),"
+    "      setDeviceMute: (kind, name, muted) => call('audio.setDeviceMute', { kind, name, muted }),"
+    "      setStreamVolume: (kind, index, volume) => call('audio.setStreamVolume', { kind, index, volume }),"
+    "      setStreamMute: (kind, index, muted) => call('audio.setStreamMute', { kind, index, muted }),"
+    "      moveStream: (kind, index, device) => call('audio.moveStream', { kind, index, device }),"
     "      onChange: (cb) => on('audio', cb),"
     "    },"
     "    bluetooth: {"
@@ -140,7 +147,7 @@ static void on_tray_menu(GVariant *menu, const gchar *error, gpointer user_data)
     g_free(p);
 }
 
-static void on_network_connect(const gchar *error, gpointer user_data) {
+static void on_pending_reply(const gchar *error, gpointer user_data) {
     PendingReply *p = user_data;
 
     if (error) {
@@ -384,6 +391,52 @@ static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *m
             webkit_script_message_reply_return_value(reply, ok);
         else
             webkit_script_message_reply_return_error_message(reply, "expected sink or source");
+    } else if (g_str_equal(cmd, "audio.setDefault") || g_str_equal(cmd, "audio.setDeviceVolume") || g_str_equal(cmd, "audio.setDeviceMute")) {
+        g_autoptr(JSCValue) kind_value = jsc_value_object_get_property(message, "kind");
+        g_autoptr(JSCValue) name_value = jsc_value_object_get_property(message, "name");
+        g_autofree gchar *kind = jsc_value_to_string(kind_value);
+        g_autofree gchar *name = jsc_value_is_string(name_value) ? jsc_value_to_string(name_value) : NULL;
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+        gboolean done;
+
+        if (g_str_equal(cmd, "audio.setDefault")) {
+            done = audio_set_default(state, kind, name);
+        } else if (g_str_equal(cmd, "audio.setDeviceVolume")) {
+            g_autoptr(JSCValue) volume_value = jsc_value_object_get_property(message, "volume");
+            done = audio_set_device_volume(state, kind, name, jsc_value_to_double(volume_value));
+        } else {
+            g_autoptr(JSCValue) muted_value = jsc_value_object_get_property(message, "muted");
+            done = audio_set_device_mute(state, kind, name, jsc_value_to_boolean(muted_value));
+        }
+
+        if (done)
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no such device");
+    } else if (g_str_equal(cmd, "audio.setStreamVolume") || g_str_equal(cmd, "audio.setStreamMute") || g_str_equal(cmd, "audio.moveStream")) {
+        g_autoptr(JSCValue) kind_value = jsc_value_object_get_property(message, "kind");
+        g_autoptr(JSCValue) index_value = jsc_value_object_get_property(message, "index");
+        g_autofree gchar *kind = jsc_value_to_string(kind_value);
+        guint32 index = (guint32)jsc_value_to_double(index_value);
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+        gboolean done;
+
+        if (g_str_equal(cmd, "audio.setStreamVolume")) {
+            g_autoptr(JSCValue) volume_value = jsc_value_object_get_property(message, "volume");
+            done = audio_set_stream_volume(state, kind, index, jsc_value_to_double(volume_value));
+        } else if (g_str_equal(cmd, "audio.setStreamMute")) {
+            g_autoptr(JSCValue) muted_value = jsc_value_object_get_property(message, "muted");
+            done = audio_set_stream_mute(state, kind, index, jsc_value_to_boolean(muted_value));
+        } else {
+            g_autoptr(JSCValue) device_value = jsc_value_object_get_property(message, "device");
+            g_autofree gchar *device = jsc_value_to_string(device_value);
+            done = audio_move_stream(state, kind, index, device);
+        }
+
+        if (done)
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no such stream or device");
     } else if (g_str_equal(cmd, "bluetooth.get")) {
         if (!state->bluez)
             return webkit_script_message_reply_return_error_message(reply, "bluetooth is disabled"), TRUE;
@@ -403,21 +456,23 @@ static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *m
     } else if (g_str_equal(cmd, "bluetooth.connect") || g_str_equal(cmd, "bluetooth.disconnect")) {
         g_autoptr(JSCValue) path_value = jsc_value_object_get_property(message, "path");
         g_autofree gchar *path = jsc_value_to_string(path_value);
-        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+        PendingReply *p = g_new0(PendingReply, 1);
 
-        if (state->bluez && bluetooth_connect(state, path, g_str_equal(cmd, "bluetooth.connect")))
-            webkit_script_message_reply_return_value(reply, ok);
-        else
-            webkit_script_message_reply_return_error_message(reply, "no such device");
+        p->reply = webkit_script_message_reply_ref(reply);
+        p->ctx = g_object_ref(ctx);
+
+        if (!state->bluez || !bluetooth_connect(state, path, g_str_equal(cmd, "bluetooth.connect"), on_pending_reply, p))
+            on_pending_reply("no such device", p);
     } else if (g_str_equal(cmd, "bluetooth.pair")) {
         g_autoptr(JSCValue) path_value = jsc_value_object_get_property(message, "path");
         g_autofree gchar *path = jsc_value_to_string(path_value);
-        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+        PendingReply *p = g_new0(PendingReply, 1);
 
-        if (state->bluez && bluetooth_pair(state, path))
-            webkit_script_message_reply_return_value(reply, ok);
-        else
-            webkit_script_message_reply_return_error_message(reply, "no such device");
+        p->reply = webkit_script_message_reply_ref(reply);
+        p->ctx = g_object_ref(ctx);
+
+        if (!state->bluez || !bluetooth_pair(state, path, on_pending_reply, p))
+            on_pending_reply("no such device", p);
     } else if (g_str_equal(cmd, "bluetooth.reply")) {
         g_autoptr(JSCValue) accept_value = jsc_value_object_get_property(message, "accept");
         g_autoptr(JSCValue) value_value = jsc_value_object_get_property(message, "value");
@@ -459,8 +514,8 @@ static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *m
         p->reply = webkit_script_message_reply_ref(reply);
         p->ctx = g_object_ref(ctx);
 
-        if (!state->network || !network_connect(state, path, password, on_network_connect, p))
-            on_network_connect("no wifi device or access point", p);
+        if (!state->network || !network_connect(state, path, password, on_pending_reply, p))
+            on_pending_reply("no wifi device or access point", p);
     } else if (g_str_equal(cmd, "exec")) {
         g_autoptr(JSCValue) argv_value = jsc_value_object_get_property(message, "argv");
         g_auto(GStrv) argv = jsc_to_strv(argv_value);
@@ -635,8 +690,7 @@ void state_init(AppState *state) {
     GdkDisplay *display = gdk_display_get_default();
 
     state->monitors = g_object_ref(gdk_display_get_monitors(display));
-
-    g_signal_connect(state->monitors, "items-changed", G_CALLBACK(on_monitors_changed), state);
+    state->monitor_windows = g_hash_table_new_full(g_direct_hash, g_direct_equal, g_object_unref, (GDestroyNotify)g_ptr_array_unref);
 
     state->content_manager = webkit_user_content_manager_new();
     webkit_user_content_manager_register_script_message_handler_with_reply(state->content_manager, "native", NULL);
@@ -680,6 +734,10 @@ void state_init(AppState *state) {
 }
 
 void state_clear(AppState *state) {
+    reload_clear(state);
+    g_clear_pointer(&state->config_path, g_free);
+    g_clear_handle_id(&state->monitors_sync_id, g_source_remove);
+    g_clear_pointer(&state->monitor_windows, g_hash_table_unref);
     g_clear_object(&state->monitors);
     g_clear_pointer(&state->config, config_free);
     g_clear_object(&state->content_manager);
@@ -696,9 +754,4 @@ void state_clear(AppState *state) {
     process_clear(state);
     g_clear_pointer(&state->toplevels, g_ptr_array_unref);
     g_debug("state cleared");
-}
-
-void on_monitors_changed(GListModel *list, guint position, guint removed, guint added, gpointer user_data) {
-    (void)user_data;
-    g_debug("monitors: %u removed, %u added at %u, now %u", removed, added, position, g_list_model_get_n_items(list));
 }

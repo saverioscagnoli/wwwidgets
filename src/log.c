@@ -16,7 +16,9 @@ static GLogWriterOutput log_writer(GLogLevelFlags level, const GLogField *fields
     }
 
     /* Respect the debug domains set in log_init(). */
-    if (g_log_writer_default_would_drop(level, domain))
+    gboolean own_info = (level & G_LOG_LEVEL_INFO) && g_strcmp0(domain, G_LOG_DOMAIN) == 0;
+
+    if (!own_info && g_log_writer_default_would_drop(level, domain))
         return G_LOG_WRITER_HANDLED;
 
     const char *name, *color;
@@ -41,8 +43,10 @@ static GLogWriterOutput log_writer(GLogLevelFlags level, const GLogField *fields
 }
 
 void log_init(void) {
+#ifndef NDEBUG
     const char *debug_domains[] = { G_LOG_DOMAIN, NULL };
     g_log_writer_default_set_debug_domains(debug_domains);
+#endif
 
     g_log_set_writer_func(log_writer, NULL, NULL);
 }

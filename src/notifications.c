@@ -66,6 +66,7 @@ typedef struct {
     guint8 urgency;
     gint64 time;
     guint timeout_id;
+    gboolean expired;
 } Notification;
 
 static gboolean image_load_data(Image *img, GVariant *v) {
@@ -166,6 +167,7 @@ static GVariant *notification_to_variant(Notification *n) {
   g_variant_builder_add(&b, "{sv}", "body", g_variant_new_string(n->body));
   g_variant_builder_add(&b, "{sv}", "urgency", g_variant_new_byte(n->urgency));
   g_variant_builder_add(&b, "{sv}", "time", g_variant_new_int64(n->time));
+  g_variant_builder_add(&b, "{sv}", "expired", g_variant_new_boolean(n->expired));
   g_variant_builder_add(&b, "{sv}", "actions", g_variant_builder_end(&actions));
 
   return g_variant_builder_end(&b);
@@ -179,10 +181,15 @@ static void notifications_changed(AppState *state) {
     }
 }
 
-static void notification_remove(AppState *state, Notification *n, guint32 reason) {
+static void notification_closed(AppState *state, Notification *n, guint32 reason) {
     if (state->notif_bus) {
         g_dbus_connection_emit_signal(state->notif_bus, NULL, NOTIF_PATH, NOTIF_IFACE, "NotificationClosed", g_variant_new("(uu)", n->id, reason), NULL);
     }
+}
+
+static void notification_remove(AppState *state, Notification *n, guint32 reason) {
+    if (!n->expired)
+        notification_closed(state, n, reason);
 
     g_ptr_array_remove(state->notifications, n);
     notifications_changed(state);
@@ -192,7 +199,9 @@ static gboolean on_timeout(gpointer user_data) {
     Notification *n = user_data;
 
     n->timeout_id = 0;
-    notification_remove(n->app, n, CLOSE_EXPIRED);
+    n->expired = TRUE;
+    notification_closed(n->app, n, CLOSE_EXPIRED);
+    notifications_changed(n->app);
     return G_SOURCE_REMOVE;
 }
 
@@ -234,6 +243,7 @@ static guint32 handle_notify(AppState *state, GVariant *params) {
     n->body = g_strdup(body);
     n->actions = g_strdupv((gchar **)actions);
     n->urgency = urgency;
+    n->expired = FALSE;
     n->time = g_get_real_time() / 1000;
 
     if (timeout < 0)
