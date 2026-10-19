@@ -9,6 +9,7 @@
 #include "audio.h"
 #include "battery.h"
 #include "bluetooth.h"
+#include "clipboard.h"
 #include "image.h"
 #include "network.h"
 #include "process.h"
@@ -104,6 +105,14 @@ static const char *SHIM =
     "      close: (id) => call('toplevels.action', { id, action: 'close' }),"
     "      setMinimized: (id, on) => call('toplevels.action', { id, action: on ? 'minimize' : 'unminimize' }),"
     "      onChange: (cb) => on('toplevels', cb),"
+    "    },"
+    "    clipboard: {"
+    "      history: () => call('clipboard.history'),"
+    "      set: (text) => call('clipboard.set', { text: String(text) }),"
+    "      copy: (id) => call('clipboard.entry', { id, action: 'copy' }),"
+    "      remove: (id) => call('clipboard.entry', { id, action: 'remove' }),"
+    "      clear: () => call('clipboard.clear'),"
+    "      onChange: (cb) => on('clipboard', cb),"
     "    },"
     "    exec: (command, args = []) => call('exec', { argv: [command, ...args] }),"
     "    spawn: async (command, args = [], { onStdout, onStderr, onExit } = {}) => {"
@@ -572,6 +581,37 @@ static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *m
             webkit_script_message_reply_return_value(reply, ok);
         else
             webkit_script_message_reply_return_error_message(reply, "no such window or action");
+    } else if (g_str_equal(cmd, "clipboard.history")) {
+        g_autoptr(GVariant) list = clipboard_history(state);
+        reply_variant(reply, ctx, list);
+    } else if (g_str_equal(cmd, "clipboard.set")) {
+        g_autoptr(JSCValue) text_value = jsc_value_object_get_property(message, "text");
+        g_autofree gchar *text = jsc_value_to_string(text_value);
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (clipboard_set(state, text))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "clipboard is unavailable");
+    } else if (g_str_equal(cmd, "clipboard.entry")) {
+        g_autoptr(JSCValue) id_value = jsc_value_object_get_property(message, "id");
+        g_autoptr(JSCValue) action_value = jsc_value_object_get_property(message, "action");
+        g_autofree gchar *action = jsc_value_to_string(action_value);
+        guint32 id = (guint32)jsc_value_to_double(id_value);
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+        gboolean done = g_str_equal(action, "copy") ? clipboard_copy(state, id) : clipboard_remove(state, id);
+
+        if (done)
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no such entry");
+    } else if (g_str_equal(cmd, "clipboard.clear")) {
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (clipboard_wipe(state))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "clipboard is disabled");
     } else if (g_str_equal(cmd, "window.setInputRegion") || g_str_equal(cmd, "window.setKeyboard")) {
         g_autoptr(JSCValue) win_value = jsc_value_object_get_property(message, "win");
         g_autofree gchar *win = jsc_value_to_string(win_value);
@@ -676,6 +716,9 @@ static void on_scheme_request(WebKitURISchemeRequest *request, gpointer user_dat
     if (host && g_str_equal(host, "notifications") && notifications_serve(state, request, g_uri_get_path(uri)))
         return;
 
+    if (host && g_str_equal(host, "clipboard") && clipboard_serve(state, request, g_uri_get_path(uri)))
+        return;
+
     if (host && g_str_equal(host, "tray") && tray_serve(state, request, g_uri_get_path(uri)))
         return;
 
@@ -731,6 +774,9 @@ void state_init(AppState *state) {
 
     if (state->config->toplevels)
         toplevels_init(state);
+
+    if (state->config->clipboard)
+        clipboard_init(state);
 }
 
 void state_clear(AppState *state) {
@@ -753,5 +799,6 @@ void state_clear(AppState *state) {
     g_clear_object(&state->upower);
     process_clear(state);
     g_clear_pointer(&state->toplevels, g_ptr_array_unref);
+    clipboard_clear(state);
     g_debug("state cleared");
 }

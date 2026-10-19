@@ -59,6 +59,7 @@ typedef struct {
     gboolean battery;
     gboolean exec;
     gboolean toplevels;
+    gboolean clipboard;
     GPtrArray *widgets;
 } Config;
 

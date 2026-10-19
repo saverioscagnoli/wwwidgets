@@ -15,6 +15,7 @@ typedef struct Tray Tray;
 typedef struct Audio Audio;
 typedef struct BluetoothAgent BluetoothAgent;
 typedef struct Network Network;
+typedef struct Clipboard Clipboard;
 
 typedef struct {
     GtkApplication *app;
@@ -45,6 +46,7 @@ typedef struct {
     struct zwlr_foreign_toplevel_manager_v1 *tl_manager;
     GPtrArray *toplevels;
     guint32 tl_next_id;
+    Clipboard *clipboard;
 } AppState;
 
 void push_event(WebKitWebView *view, const gchar *name, GVariant *detail);

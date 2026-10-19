@@ -1,6 +1,6 @@
 CC      ?= cc
 CFLAGS  ?= -O2 -g
-PKGS    := gtk4-layer-shell-0 gtk4 webkitgtk-6.0 json-glib-1.0 wayland-client libpulse libpulse-mainloop-glib
+PKGS    := gtk4-layer-shell-0 gtk4 webkitgtk-6.0 json-glib-1.0 wayland-client libpulse libpulse-mainloop-glib gio-unix-2.0
 WL_XML  := $(shell pkg-config --variable=pkgdatadir wayland-protocols)/staging/ext-workspace/ext-workspace-v1.xml
 CFLAGS  += -MMD -MP -Wall -Wextra -Ibuild -DG_LOG_DOMAIN=\"wwwidgets\" -DG_LOG_USE_STRUCTURED $(shell pkg-config --cflags $(PKGS))
 LDLIBS  += $(shell pkg-config --libs $(PKGS))
@@ -14,6 +14,8 @@ OBJ     += build/ext-workspace-v1-protocol.o
 TL_XML  := protocol/wlr-foreign-toplevel-management-unstable-v1.xml
 TL_NAME := wlr-foreign-toplevel-management-unstable-v1
 OBJ     += build/$(TL_NAME)-protocol.o
+DC_XML  := $(shell pkg-config --variable=pkgdatadir wayland-protocols)/staging/ext-data-control/ext-data-control-v1.xml
+OBJ     += build/ext-data-control-v1-protocol.o
 
 RES_XML := web/resources.gresource.xml
 RES_DEP := $(shell glib-compile-resources --sourcedir web --generate-dependencies $(RES_XML))
@@ -53,6 +55,17 @@ build/$(TL_NAME)-protocol.o: build/$(TL_NAME)-protocol.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 build/toplevel.o: build/$(TL_NAME)-client-protocol.h
+
+build/ext-data-control-v1-client-protocol.h: $(DC_XML) | build
+	wayland-scanner client-header $< $@
+
+build/ext-data-control-v1-protocol.c: $(DC_XML) | build
+	wayland-scanner private-code $< $@
+
+build/ext-data-control-v1-protocol.o: build/ext-data-control-v1-protocol.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+build/clipboard.o: build/ext-data-control-v1-client-protocol.h
 
 build:
 	mkdir -p build
