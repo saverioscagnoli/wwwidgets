@@ -378,6 +378,7 @@ gboolean config_parse(Config *config, const gchar *path, GError **error) {
     gboolean battery = json_object_get_boolean_member_with_default(root, "battery", FALSE);
     gboolean exec = json_object_get_boolean_member_with_default(root, "exec", FALSE);
     gboolean toplevels = json_object_get_boolean_member_with_default(root, "toplevels", FALSE);
+    gboolean clipboard = json_object_get_boolean_member_with_default(root, "clipboard", FALSE);
 
     config->devtools = devtools;
     config->hot_reload = hot_reload;
@@ -390,6 +391,7 @@ gboolean config_parse(Config *config, const gchar *path, GError **error) {
     config->battery = battery;
     config->exec = exec;
     config->toplevels = toplevels;
+    config->clipboard = clipboard;
 
     g_debug("devtools: %s", BOOL_STR(devtools));
     g_debug("hot reload: %s", BOOL_STR(hot_reload));
@@ -402,6 +404,7 @@ gboolean config_parse(Config *config, const gchar *path, GError **error) {
     g_debug("battery: %s", BOOL_STR(battery));
     g_debug("exec: %s", BOOL_STR(exec));
     g_debug("toplevels protocol: %s", BOOL_STR(toplevels));
+    g_debug("clipboard: %s", BOOL_STR(clipboard));
 
     config->widgets = g_ptr_array_new_with_free_func((GDestroyNotify)widget_config_free);
 

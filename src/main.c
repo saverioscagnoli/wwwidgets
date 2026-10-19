@@ -1,5 +1,6 @@
 #include <gtk/gtk.h>
 #include <gtk4-layer-shell.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdnoreturn.h>
 #include <webkit/webkit.h>
@@ -300,6 +301,7 @@ static gint on_command_line(GApplication *app, GApplicationCommandLine *cmdline,
 
 int main(int argc, char **argv) {
     log_init();
+    signal(SIGPIPE, SIG_IGN);
 
     AppState state = { 0 };
 
