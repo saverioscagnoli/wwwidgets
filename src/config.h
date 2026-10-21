@@ -60,6 +60,7 @@ typedef struct {
     gboolean exec;
     gboolean toplevels;
     gboolean clipboard;
+    gboolean media;
     GPtrArray *widgets;
 } Config;
 

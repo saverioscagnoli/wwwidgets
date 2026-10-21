@@ -11,6 +11,7 @@
 #include "bluetooth.h"
 #include "clipboard.h"
 #include "image.h"
+#include "media.h"
 #include "network.h"
 #include "process.h"
 #include "reload.h"
@@ -113,6 +114,17 @@ static const char *SHIM =
     "      remove: (id) => call('clipboard.entry', { id, action: 'remove' }),"
     "      clear: () => call('clipboard.clear'),"
     "      onChange: (cb) => on('clipboard', cb),"
+    "    },"
+    "    media: {"
+    "      list: () => call('media.list'),"
+    "      playPause: (id) => call('media.action', { id, action: 'PlayPause' }),"
+    "      play: (id) => call('media.action', { id, action: 'Play' }),"
+    "      pause: (id) => call('media.action', { id, action: 'Pause' }),"
+    "      stop: (id) => call('media.action', { id, action: 'Stop' }),"
+    "      next: (id) => call('media.action', { id, action: 'Next' }),"
+    "      previous: (id) => call('media.action', { id, action: 'Previous' }),"
+    "      setPosition: (id, position) => call('media.setPosition', { id, position }),"
+    "      onChange: (cb) => on('media', cb),"
     "    },"
     "    exec: (command, args = []) => call('exec', { argv: [command, ...args] }),"
     "    spawn: async (command, args = [], { onStdout, onStderr, onExit } = {}) => {"
@@ -581,6 +593,28 @@ static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *m
             webkit_script_message_reply_return_value(reply, ok);
         else
             webkit_script_message_reply_return_error_message(reply, "no such window or action");
+    } else if (g_str_equal(cmd, "media.list")) {
+        g_autoptr(GVariant) list = media_list(state);
+        reply_variant(reply, ctx, list);
+    } else if (g_str_equal(cmd, "media.action")) {
+        g_autoptr(JSCValue) id_value = jsc_value_object_get_property(message, "id");
+        g_autoptr(JSCValue) action_value = jsc_value_object_get_property(message, "action");
+        g_autofree gchar *action = jsc_value_to_string(action_value);
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (media_action(state, (guint32)jsc_value_to_double(id_value), action))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no such player or action");
+    } else if (g_str_equal(cmd, "media.setPosition")) {
+        g_autoptr(JSCValue) id_value = jsc_value_object_get_property(message, "id");
+        g_autoptr(JSCValue) position_value = jsc_value_object_get_property(message, "position");
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (media_set_position(state, (guint32)jsc_value_to_double(id_value), jsc_value_to_double(position_value)))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no such player or track is not seekable");
     } else if (g_str_equal(cmd, "clipboard.history")) {
         g_autoptr(GVariant) list = clipboard_history(state);
         reply_variant(reply, ctx, list);
@@ -777,6 +811,9 @@ void state_init(AppState *state) {
 
     if (state->config->clipboard)
         clipboard_init(state);
+
+    if (state->config->media)
+        media_init(state);
 }
 
 void state_clear(AppState *state) {
@@ -800,5 +837,6 @@ void state_clear(AppState *state) {
     process_clear(state);
     g_clear_pointer(&state->toplevels, g_ptr_array_unref);
     clipboard_clear(state);
+    media_clear(state);
     g_debug("state cleared");
 }

@@ -16,6 +16,7 @@ typedef struct Audio Audio;
 typedef struct BluetoothAgent BluetoothAgent;
 typedef struct Network Network;
 typedef struct Clipboard Clipboard;
+typedef struct Media Media;
 
 typedef struct {
     GtkApplication *app;
@@ -47,6 +48,7 @@ typedef struct {
     GPtrArray *toplevels;
     guint32 tl_next_id;
     Clipboard *clipboard;
+    Media *media;
 } AppState;
 
 void push_event(WebKitWebView *view, const gchar *name, GVariant *detail);
