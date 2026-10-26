@@ -40,6 +40,7 @@ static const char *SHIM =
     "    state: {"
     "      get: (key) => call('state.get', { key }),"
     "      set: (key, value) => call('state.set', { key, value: JSON.stringify(value ?? null) }),"
+    "      toggle: (key) => call('state.toggle', { key }),"
     "      onChange: (key, cb) => on('state', (d) => d.key === key && cb(d.value)),"
     "    },"
     "    workspace: {"
@@ -297,6 +298,14 @@ static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *m
             webkit_script_message_reply_return_value(reply, ok);
         else
             webkit_script_message_reply_return_error_message(reply, "value is not serializable");
+    } else if (g_str_equal(cmd, "state.toggle")) {
+        g_autoptr(JSCValue) key_value = jsc_value_object_get_property(message, "key");
+        g_autofree gchar *key = jsc_value_to_string(key_value);
+        gboolean on = g_strcmp0(store_get(state, key), "true") != 0;
+        g_autoptr(JSCValue) result = jsc_value_new_boolean(ctx, on);
+
+        store_set(state, key, on ? "true" : "false");
+        webkit_script_message_reply_return_value(reply, result);
     } else if (g_str_equal(cmd, "workspace.list")) {
         g_autoptr(GVariant) list = workspace_list(state);
         reply_variant(reply, ctx, list);

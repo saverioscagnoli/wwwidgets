@@ -42,6 +42,14 @@ static gboolean widget_on_monitor(const WidgetConfig *w, GdkMonitor *monitor) {
     return connector != NULL && g_strv_contains((const gchar *const *)w->monitors, connector);
 }
 
+static void apply_initial_visibility(gpointer user_data) {
+    GtkWindow *window = user_data;
+    AppState *state = g_object_get_data(G_OBJECT(window), "state");
+
+    store_apply_visibility(state, window);
+    g_object_unref(window);
+}
+
 static GtkWindow *spawn_window(GtkApplication *app, AppState *state, WidgetConfig *w, guint n, GdkMonitor *monitor) {
     GtkWindow *window = GTK_WINDOW(gtk_application_window_new(app));
 
@@ -111,7 +119,8 @@ static GtkWindow *spawn_window(GtkApplication *app, AppState *state, WidgetConfi
         g_object_set_data_full(G_OBJECT(window), "visible-when", g_string_free(g_steal_pointer(&key), FALSE), g_free);
         g_object_set_data(G_OBJECT(window), "keyboard", GINT_TO_POINTER(w->keyboard));
         g_object_set_data(G_OBJECT(window), "hide", GINT_TO_POINTER(w->hide));
-        store_apply_visibility(state, window);
+        g_object_set_data(G_OBJECT(window), "state", state);
+        g_idle_add_once(apply_initial_visibility, g_object_ref(window));
     }
 
     return window;
