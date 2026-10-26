@@ -2,9 +2,7 @@
 
 Widget system that enables you to create widgets using any web technology!
 
-<video src="docs/screenshots/demo-1.mp4" controls muted autoplay loop width="100%">
-  <a href="docs/screenshots/demo-1.mp4"></a>
-</video>
+https://github.com/user-attachments/assets/ec223d3d-c564-4e4d-aab8-2efcd70d7e9f
 
 ## Install
 
