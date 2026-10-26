@@ -311,10 +311,11 @@ static void on_startup(GApplication *app, gpointer user_data) {
 
     AppState *state = user_data;
 
-    const gchar *config_dir = g_get_user_config_dir();
-    g_debug("user config: %s", config_dir);
+    g_autofree gchar *config_file = state->config_path
+        ? g_steal_pointer(&state->config_path)
+        : g_build_filename(g_get_user_config_dir(), CONFIG_DIR_NAME, CONFIG_FILE_NAME, NULL);
 
-    g_autofree gchar *config_file = g_build_filename(config_dir, CONFIG_DIR_NAME, CONFIG_FILE_NAME, NULL);
+    g_debug("config: %s", config_file);
 
     g_autoptr(GError) error = NULL;
 
@@ -346,8 +347,42 @@ static gint on_command_line(GApplication *app, GApplicationCommandLine *cmdline,
 
 extern const char TYPES[];
 
+static gchar *take_config_arg(int *argc, char **argv) {
+    gchar *path = NULL;
+    int i = 1;
+
+    while (i < *argc) {
+        const gchar *arg = argv[i];
+
+        if (g_str_equal(arg, "-c") || g_str_equal(arg, "--config")) {
+            if (i + 1 >= *argc) {
+                g_printerr("wwwidgets: %s requires a path\n", arg);
+                exit(1);
+            }
+
+            g_free(path);
+            path = g_canonicalize_filename(argv[i + 1], NULL);
+            i += 2;
+        } else if (g_str_has_prefix(arg, "--config=")) {
+            g_free(path);
+            path = g_canonicalize_filename(arg + strlen("--config="), NULL);
+            i++;
+        } else {
+            break;
+        }
+    }
+
+    memmove(&argv[1], &argv[i], (*argc - i + 1) * sizeof(char *));
+    *argc -= i = 1;
+
+    return path;
+}
+
 int main(int argc, char **argv) {
+    gchar *config_path = take_config_arg(&argc, argv);
+
     if (argc == 2 && g_str_equal(argv[1], "types")) {
+        g_free(config_path);
         fputs(TYPES, stdout);
         return 0;
     }
@@ -356,6 +391,7 @@ int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
 
     AppState state = { 0 };
+    state.config_path = config_path;
 
     GtkApplication *app = gtk_application_new(APP_ID, G_APPLICATION_HANDLES_COMMAND_LINE);
     g_signal_connect(app, "startup", G_CALLBACK(on_startup), &state);
@@ -366,6 +402,8 @@ int main(int argc, char **argv) {
 
     if (state.config)
         state_clear(&state);
+    else
+        g_free(state.config_path);
 
     g_object_unref(app);
 
