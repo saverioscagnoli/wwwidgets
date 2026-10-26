@@ -121,7 +121,7 @@ It will look for `~/config/wwwidgets/config.json`, that should look like this:
 
 ### Hot reload
 
-With `"hot_reload": true`, wwwidgets watches:
+With `"hot-reload": true`, wwwidgets watches:
 
 - `config.json`: on change the config is parsed again and the widgets are respawned. Enabling or disabling a service still needs a restart.
 - The directory of every file widget, up to 4 levels deep, skipping hidden directories and `node_modules`. A change respawns only the widgets in that directory.
