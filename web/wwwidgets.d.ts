@@ -156,6 +156,13 @@ declare global {
       timeToFull: number;
     }
 
+    interface Brightness {
+      device: string;
+      value: number;
+      raw: number;
+      max: number;
+    }
+
     interface Toplevel {
       id: number;
       title: string;
@@ -280,6 +287,11 @@ declare global {
       battery: {
         get(): Promise<Battery>;
         onChange(cb: (battery: Battery) => void): Unsubscribe;
+      };
+      brightness: {
+        get(): Promise<Brightness>;
+        set(value: number): Promise<true>;
+        onChange(cb: (brightness: Brightness) => void): Unsubscribe;
       };
       toplevels: {
         list(): Promise<Toplevel[]>;

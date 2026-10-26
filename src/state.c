@@ -5,6 +5,7 @@
 #include <json-glib/json-glib.h>
 
 #include "state.h"
+#include "brightness.h"
 #include "store.h"
 #include "audio.h"
 #include "battery.h"
@@ -127,6 +128,11 @@ static const char *SHIM =
     "      previous: (id) => call('media.action', { id, action: 'Previous' }),"
     "      setPosition: (id, position) => call('media.setPosition', { id, position }),"
     "      onChange: (cb) => on('media', cb),"
+    "    },"
+    "    brightness: {"
+    "      get: () => call('brightness.get'),"
+    "      set: (value) => call('brightness.set', { value }),"
+    "      onChange: (cb) => on('brightness', cb),"
     "    },"
     "    exec: (command, args = []) => call('exec', { argv: [command, ...args] }),"
     "    spawn: async (command, args = [], { onStdout, onStderr, onExit } = {}) => {"
@@ -656,6 +662,20 @@ static gboolean on_native_message(WebKitUserContentManager *manager, JSCValue *m
             webkit_script_message_reply_return_value(reply, ok);
         else
             webkit_script_message_reply_return_error_message(reply, "clipboard is disabled");
+    } else if (g_str_equal(cmd, "brightness.get")) {
+           if (!state->brightness)
+               return webkit_script_message_reply_return_error_message(reply, "no backlight"), TRUE;
+
+           g_autoptr(GVariant) snapshot = brightness_snapshot(state);
+           reply_variant(reply, ctx, snapshot);
+    } else if (g_str_equal(cmd, "brightness.set")) {
+        g_autoptr(JSCValue) value_value = jsc_value_object_get_property(message, "value");
+        g_autoptr(JSCValue) ok = jsc_value_new_boolean(ctx, TRUE);
+
+        if (brightness_set(state, jsc_value_to_double(value_value)))
+            webkit_script_message_reply_return_value(reply, ok);
+        else
+            webkit_script_message_reply_return_error_message(reply, "no backlight");
     } else if (g_str_equal(cmd, "window.setInputRegion") || g_str_equal(cmd, "window.setKeyboard")) {
         g_autoptr(JSCValue) win_value = jsc_value_object_get_property(message, "win");
         g_autofree gchar *win = jsc_value_to_string(win_value);
@@ -827,6 +847,9 @@ void state_init(AppState *state) {
 
     if (state->config->media)
         media_init(state);
+
+    if (state->config->brightness)
+        brightness_init(state);
 }
 
 void state_clear(AppState *state) {
@@ -851,5 +874,6 @@ void state_clear(AppState *state) {
     g_clear_pointer(&state->toplevels, g_ptr_array_unref);
     clipboard_clear(state);
     media_clear(state);
+    brightness_clear(state);
     g_debug("state cleared");
 }

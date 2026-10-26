@@ -70,6 +70,7 @@ It will look for `~/config/wwwidgets/config.json`, that should look like this:
 | `bluetooth` | bool | `false` | Bluetooth service |
 | `network` | bool | `false` | Network service |
 | `battery` | bool | `false` | Battery service |
+| `brightness` | bool | `false` | Backlight service |
 | `exec` | bool | `false` | Allow widgets to run processes |
 | `toplevels` | bool | `false` | Window list (foreign toplevel) |
 | `widgets` | array | — | **Required**, list of widgets |

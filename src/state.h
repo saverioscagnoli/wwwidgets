@@ -17,6 +17,7 @@ typedef struct BluetoothAgent BluetoothAgent;
 typedef struct Network Network;
 typedef struct Clipboard Clipboard;
 typedef struct Media Media;
+typedef struct Brightness Brightness;
 
 typedef struct {
     GtkApplication *app;
@@ -49,6 +50,7 @@ typedef struct {
     guint32 tl_next_id;
     Clipboard *clipboard;
     Media *media;
+    Brightness *brightness;
 } AppState;
 
 void push_event(WebKitWebView *view, const gchar *name, GVariant *detail);

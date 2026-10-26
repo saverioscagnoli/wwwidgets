@@ -10,7 +10,7 @@ else
 CFLAGS  ?= -Og -g
 endif
 
-PKGS    := gtk4-layer-shell-0 gtk4 webkitgtk-6.0 json-glib-1.0 wayland-client libpulse libpulse-mainloop-glib gio-unix-2.0
+PKGS    := gtk4-layer-shell-0 gtk4 webkitgtk-6.0 json-glib-1.0 wayland-client libpulse libpulse-mainloop-glib gio-unix-2.0 gudev-1.0
 WP_DIR  := $(shell pkg-config --variable=pkgdatadir wayland-protocols)
 CFLAGS  += -MMD -MP -Wall -Wextra -I$(BUILD) -DG_LOG_DOMAIN=\"wwwidgets\" -DG_LOG_USE_STRUCTURED $(shell pkg-config --cflags $(PKGS))
 LDLIBS  += $(shell pkg-config --libs $(PKGS))

@@ -62,6 +62,7 @@ typedef struct {
     gboolean toplevels;
     gboolean clipboard;
     gboolean media;
+    gboolean brightness;
     GPtrArray *widgets;
 } Config;
 
