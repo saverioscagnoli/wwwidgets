@@ -10,6 +10,7 @@
 #include <json-glib/json-glib.h>
 
 #include "config.h"
+#include "glib-object.h"
 #include "log.h"
 #include "reload.h"
 #include "state.h"
@@ -18,6 +19,24 @@
 static const gchar *APP_ID = "dev.svscagn.wwwidgets";
 static const gchar *CONFIG_DIR_NAME = "wwwidgets";
 static const gchar *CONFIG_FILE_NAME = "config.json";
+
+static gboolean on_decide_policy(WebKitWebView *view, WebKitPolicyDecision *decision, WebKitPolicyDecisionType type, gpointer user_data) {
+    (void)user_data;
+
+    if (type != WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION)
+        return FALSE;
+
+    const gchar *origin = g_object_get_data(G_OBJECT(view), "origin");
+    WebKitNavigationAction *action = webkit_navigation_policy_decision_get_navigation_action(WEBKIT_NAVIGATION_POLICY_DECISION(decision));
+    const gchar *target = webkit_uri_request_get_uri(webkit_navigation_action_get_request(action));
+
+    if (g_str_has_prefix(target, origin))
+        return FALSE;
+
+    g_warning("blocked navigation to %s", target);
+    webkit_policy_decision_ignore(decision);
+    return TRUE;
+}
 
 static gboolean on_context_menu(WebKitWebView *view, WebKitContextMenu *menu, WebKitHitTestResult *hit, gpointer user_data) {
     (void)view;
@@ -104,9 +123,26 @@ static GtkWindow *spawn_window(GtkApplication *app, AppState *state, WidgetConfi
     g_object_set_data(G_OBJECT(window), "view", view);
     g_object_set_data(G_OBJECT(view), "widget", GUINT_TO_POINTER(n));
 
-    g_autofree char *entry = g_path_get_basename(w->path);
     g_autofree char *monitor_arg = g_uri_escape_string(connector ? connector : "", NULL, FALSE);
-    g_autofree char *uri = g_strdup_printf("wwwidgets://widget-%u/%s?monitor=%s", n, entry, monitor_arg);
+    g_autofree char *uri = NULL;
+
+    if (w->is_url) {
+        g_autoptr(GUri) base = g_uri_parse(w->path, G_URI_FLAGS_ENCODED, NULL);
+        const gchar *query =  g_uri_get_query(base);
+        g_autofree gchar *extra = g_strdup_printf("widget=%u&monitor=%s", n, monitor_arg);
+        g_autofree gchar *full = query && *query ? g_strconcat(query, "&", extra, NULL) : g_strdup(extra);
+        g_autoptr(GUri) target = g_uri_build(G_URI_FLAGS_ENCODED, g_uri_get_scheme(base), g_uri_get_userinfo(base), g_uri_get_host(base), g_uri_get_port(base), g_uri_get_path(base), full, g_uri_get_fragment(base));
+        g_autofree gchar *port = g_uri_get_port(base) > 0 ? g_strdup_printf(":%d", g_uri_get_port(base)) : g_strdup("");
+        gchar *origin = g_strdup_printf("%s://%s%s/", g_uri_get_scheme(base), g_uri_get_host(base), port);
+
+        g_object_set_data_full(G_OBJECT(view), "origin", origin, g_free);
+        g_signal_connect(view, "decide-policy", G_CALLBACK(on_decide_policy), NULL);
+        uri = g_uri_to_string(target);
+    } else {
+        g_autofree char *entry = g_path_get_basename(w->path);
+        uri = g_strdup_printf("wwwidgets://widget-%u/%s?widget=%u&monitor=%s", n, entry, n, monitor_arg);
+    }
+
     webkit_web_view_load_uri(WEBKIT_WEB_VIEW(view), uri);
     gtk_window_set_child(window, view);
 
@@ -308,7 +344,14 @@ static gint on_command_line(GApplication *app, GApplicationCommandLine *cmdline,
     return store_command(state, cmdline, argc - 1, argv + 1);
 }
 
+extern const char TYPES[];
+
 int main(int argc, char **argv) {
+    if (argc == 2 && g_str_equal(argv[1], "types")) {
+        fputs(TYPES, stdout);
+        return 0;
+    }
+
     log_init();
     signal(SIGPIPE, SIG_IGN);
 

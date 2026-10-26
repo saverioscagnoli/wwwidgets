@@ -92,7 +92,7 @@ static void on_widget_changed(GFileMonitor *monitor, GFile *file, GFile *other, 
     for (guint i = 0; i < config->widgets->len; i++) {
         WidgetConfig *w = g_ptr_array_index(config->widgets, i);
 
-        if (w->path == NULL)
+        if (w->path == NULL || w->is_url)
             continue;
 
         g_autofree gchar *dir = g_path_get_dirname(w->path);
@@ -170,7 +170,7 @@ static void watch_widgets(Reload *r) {
     for (guint i = 0; i < config->widgets->len; i++) {
         WidgetConfig *w = g_ptr_array_index(config->widgets, i);
 
-        if (w->path == NULL)
+        if (w->path == NULL || w->is_url)
             continue;
 
         g_autofree gchar *dir = g_path_get_dirname(w->path);

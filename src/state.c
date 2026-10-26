@@ -29,8 +29,9 @@ static const char *SHIM =
     "    window.addEventListener(`wwwidgets:${name}`, h);"
     "    return () => window.removeEventListener(`wwwidgets:${name}`, h);"
     "  };"
-    "  const monitor = new URLSearchParams(location.search).get('monitor') || '';"
-    "  const win = `${location.host}|${monitor}`;"
+    "  const params = new URLSearchParams(location.search);"
+    "  const monitor = params.get('monitor') || '';"
+    "  const win = `widget-${params.get('widget')}|${monitor}`;"
     "  window.wwwidgets = {"
     "    monitor,"
     "    window: {"
@@ -701,7 +702,7 @@ static gboolean widget_serve(AppState *state, WebKitURISchemeRequest *request, c
 
     WidgetConfig *w = g_ptr_array_index(state->config->widgets, index);
 
-    if (w->path == NULL)
+    if (w->path == NULL || w->is_url)
         return FALSE;
 
     g_autofree gchar *dir = g_path_get_dirname(w->path);
@@ -790,6 +791,9 @@ void state_init(AppState *state) {
     state->windows = g_ptr_array_new();
     store_init(state);
     webkit_web_context_register_uri_scheme(webkit_web_context_get_default(), "wwwidgets", on_scheme_request, state, NULL);
+
+    WebKitSecurityManager *security = webkit_web_context_get_security_manager(webkit_web_context_get_default());
+    webkit_security_manager_register_uri_scheme_as_cors_enabled(security, "wwwidgets");
 
     if (state->config->workspaces)
         workspace_init(state);

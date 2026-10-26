@@ -1,88 +1,65 @@
-CC      ?= cc
-CFLAGS  ?= -O2 -g
-PKGS    := gtk4-layer-shell-0 gtk4 webkitgtk-6.0 json-glib-1.0 wayland-client libpulse libpulse-mainloop-glib gio-unix-2.0
-WL_XML  := $(shell pkg-config --variable=pkgdatadir wayland-protocols)/staging/ext-workspace/ext-workspace-v1.xml
-CFLAGS  += -MMD -MP -Wall -Wextra -Ibuild -DG_LOG_DOMAIN=\"wwwidgets\" -DG_LOG_USE_STRUCTURED $(shell pkg-config --cflags $(PKGS))
-LDLIBS  += $(shell pkg-config --libs $(PKGS))
-
-
+MODE    ?= debug
+BUILD   := build/$(MODE)
 TARGET  := wwwidgets
 PREFIX  ?= $(HOME)/.local
-SRC     := $(wildcard src/*.c)
-OBJ     := $(SRC:src/%.c=build/%.o) build/resources.o
-OBJ     += build/ext-workspace-v1-protocol.o
-TL_XML  := protocol/wlr-foreign-toplevel-management-unstable-v1.xml
-TL_NAME := wlr-foreign-toplevel-management-unstable-v1
-OBJ     += build/$(TL_NAME)-protocol.o
-DC_XML  := $(shell pkg-config --variable=pkgdatadir wayland-protocols)/staging/ext-data-control/ext-data-control-v1.xml
-OBJ     += build/ext-data-control-v1-protocol.o
 
-RES_XML := web/resources.gresource.xml
-RES_DEP := $(shell glib-compile-resources --sourcedir web --generate-dependencies $(RES_XML))
+ifeq ($(MODE),release)
+CFLAGS  ?= -O2 -DNDEBUG
+LDFLAGS ?= -s
+else
+CFLAGS  ?= -Og -g
+endif
 
-all: $(TARGET) compile_flags.txt
+PKGS    := gtk4-layer-shell-0 gtk4 webkitgtk-6.0 json-glib-1.0 wayland-client libpulse libpulse-mainloop-glib gio-unix-2.0
+WP_DIR  := $(shell pkg-config --variable=pkgdatadir wayland-protocols)
+CFLAGS  += -MMD -MP -Wall -Wextra -I$(BUILD) -DG_LOG_DOMAIN=\"wwwidgets\" -DG_LOG_USE_STRUCTURED $(shell pkg-config --cflags $(PKGS))
+LDLIBS  += $(shell pkg-config --libs $(PKGS))
 
-$(TARGET): $(OBJ)
+PROTOS  := $(WP_DIR)/staging/ext-workspace/ext-workspace-v1.xml \
+           $(WP_DIR)/staging/ext-data-control/ext-data-control-v1.xml \
+           protocol/wlr-foreign-toplevel-management-unstable-v1.xml
+NAMES   := $(basename $(notdir $(PROTOS)))
+HDRS    := $(NAMES:%=$(BUILD)/%-client-protocol.h)
+
+SRC_OBJ := $(patsubst src/%.c,$(BUILD)/%.o,$(wildcard src/*.c))
+OBJ     := $(SRC_OBJ) $(BUILD)/types.o $(NAMES:%=$(BUILD)/%-protocol.o)
+
+vpath %.xml $(sort $(dir $(PROTOS)))
+
+all: $(BUILD)/$(TARGET) compile_flags.txt
+
+$(BUILD)/$(TARGET): $(OBJ)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-build/%.o: src/%.c | build
+$(SRC_OBJ): | $(HDRS)
+
+$(BUILD)/%.o: src/%.c | $(BUILD)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-build/resources.c: $(RES_XML) $(RES_DEP) | build
-	glib-compile-resources --sourcedir web --generate-source --target $@ $<
-
-build/resources.o: build/resources.c
+$(BUILD)/%.o: $(BUILD)/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-build/ext-workspace-v1-client-protocol.h: $(WL_XML) | build
+$(BUILD)/%-client-protocol.h: %.xml | $(BUILD)
 	wayland-scanner client-header $< $@
 
-build/ext-workspace-v1-protocol.c: $(WL_XML) | build
+$(BUILD)/%-protocol.c: %.xml | $(BUILD)
 	wayland-scanner private-code $< $@
 
-build/ext-workspace-v1-protocol.o: build/ext-workspace-v1-protocol.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+$(BUILD)/types.c: web/wwwidgets.d.ts | $(BUILD)
+	{ printf 'const char TYPES[] = {'; od -An -v -tx1 $< | sed 's/ \([0-9a-f][0-9a-f]\)/0x\1,/g'; printf '0};\n'; } > $@
 
-build/workspace.o: build/ext-workspace-v1-client-protocol.h
+$(BUILD):
+	mkdir -p $@
 
-build/$(TL_NAME)-client-protocol.h: $(TL_XML) | build
-	wayland-scanner client-header $< $@
-
-build/$(TL_NAME)-protocol.c: $(TL_XML) | build
-	wayland-scanner private-code $< $@
-
-build/$(TL_NAME)-protocol.o: build/$(TL_NAME)-protocol.c
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-build/toplevel.o: build/$(TL_NAME)-client-protocol.h
-
-build/ext-data-control-v1-client-protocol.h: $(DC_XML) | build
-	wayland-scanner client-header $< $@
-
-build/ext-data-control-v1-protocol.c: $(DC_XML) | build
-	wayland-scanner private-code $< $@
-
-build/ext-data-control-v1-protocol.o: build/ext-data-control-v1-protocol.c
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-build/clipboard.o: build/ext-data-control-v1-client-protocol.h
-
-build:
-	mkdir -p build
-
-# clangd (Zed, VS Code, ...) reads this to find the GTK/WebKit headers
 compile_flags.txt: Makefile
-	printf '%s\n' -xc -std=gnu11 -Wall -Wextra -Ibuild $(shell pkg-config --cflags $(PKGS)) > $@
+	printf '%s\n' -xc -std=gnu11 -Wall -Wextra -Ibuild/debug $(shell pkg-config --cflags $(PKGS)) > $@
 
 run: all
-	./$(TARGET)
+	./$(BUILD)/$(TARGET)
 
-release:
-	$(MAKE) clean
-	CFLAGS="-O2 -DNDEBUG" LDFLAGS="-s" $(MAKE) all
-
-install: $(TARGET)
-	install -Dm755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/$(TARGET)
+install:
+	$(MAKE) MODE=release
+	install -Dm755 build/release/$(TARGET) $(DESTDIR)$(PREFIX)/bin/$(TARGET)
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(TARGET)
@@ -90,6 +67,7 @@ uninstall:
 clean:
 	rm -rf build $(TARGET) compile_flags.txt
 
-.PHONY: all run release install uninstall clean
+.PHONY: all run install uninstall clean
+.SECONDARY:
 
 -include $(OBJ:.o=.d)

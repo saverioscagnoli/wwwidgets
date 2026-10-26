@@ -22,6 +22,7 @@ typedef enum {
 
 typedef struct {
     gchar *path;
+    gboolean is_url;
     gchar *namespace;
     gboolean all_monitors;
     GStrv monitors;

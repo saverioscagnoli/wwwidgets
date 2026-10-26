@@ -133,6 +133,6 @@ gint store_command(AppState *state, GApplicationCommandLine *cmdline, gint argc,
         return 0;
     }
 
-    g_application_command_line_printerr(cmdline, "usage: wwwidgets [get <key> | set <key> [value] | toggle <key>]\n");
+    g_application_command_line_printerr(cmdline, "usage: wwwidgets [get <key> | set <key> [value] | toggle <key> | types]\n");
     return 2;
 }

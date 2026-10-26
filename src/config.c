@@ -1,5 +1,6 @@
 #include <glib.h>
 #include <json-glib/json-glib.h>
+#include <string.h>
 
 #include "config.h"
 
@@ -22,7 +23,28 @@ static gboolean node_to_px(JsonNode *node, int *out) {
     return TRUE;
 }
 
+static gboolean is_url(const gchar *path) {
+    return strstr(path, "://") != NULL || g_regex_match_simple("^[^/~.][^/]*:\\d+", path, 0, 0);
+}
+
+static gchar *normalize_url(const gchar *path) {
+    g_autofree gchar *url = NULL;
+
+    if (strstr(path, "://"))
+        url = g_strdup(path);
+    else if (g_regex_match_simple("^[A-Za-z0-9.-]+:[0-9]+(/.*)?$", path, 0, 0))
+        url = g_strconcat("http://", path, NULL);
+
+    if (url == NULL || !g_uri_is_valid(url, G_URI_FLAGS_ENCODED, NULL))
+        return NULL;
+
+    return g_steal_pointer(&url);
+}
+
 static gchar *resolve_path(const gchar *config_path, const gchar *path, GError **error) {
+    if (is_url(path))
+        return strstr(path, "://") ? g_strdup(path) : g_strconcat("http://", path, NULL);
+
     g_autofree gchar *expanded = NULL;
 
     if (g_str_equal(path, "~") || g_str_has_prefix(path, "~"))
@@ -368,7 +390,7 @@ gboolean config_parse(Config *config, const gchar *path, GError **error) {
 
 
     gboolean devtools = json_object_get_boolean_member_with_default(root, "devtools", FALSE);
-    gboolean hot_reload = json_object_get_boolean_member_with_default(root, "hot_reload", FALSE);
+    gboolean hot_reload = json_object_get_boolean_member_with_default(root, "hot-reload", FALSE);
     gboolean workspaces = json_object_get_boolean_member_with_default(root, "workspaces", FALSE);
     gboolean notifications = json_object_get_boolean_member_with_default(root, "notifications", FALSE);
     gboolean tray = json_object_get_boolean_member_with_default(root, "tray", FALSE);
@@ -427,6 +449,8 @@ gboolean config_parse(Config *config, const gchar *path, GError **error) {
 
             if (!json_object_has_member(obj, "path"))
                 g_debug("widgets[%u]: no \"path\", spawning a spacer", i);
+            else if ((w->path = normalize_url(json_object_get_string_member(obj, "path"))) != NULL)
+                w->is_url = TRUE;
             else if ((w->path = resolve_path(path, json_object_get_string_member(obj, "path"), &widget_error)) == NULL) {
                 g_warning("widgets[%u]: %s, skipping", i, widget_error->message);
                 widget_config_free(w);
