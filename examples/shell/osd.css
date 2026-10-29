@@ -1,0 +1,94 @@
+body {
+  display: grid;
+  place-items: end center;
+  padding-bottom: 12px;
+}
+
+#osd {
+  --v: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 300px;
+  height: 64px;
+  padding: 0 20px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  transform: translateY(30px) scale(0.85);
+  transition: opacity 0.25s var(--ease), transform 0.45s var(--spring);
+}
+
+body.show #osd {
+  opacity: 1;
+  transform: none;
+}
+
+#osd-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--accent);
+}
+
+#osd-icon.bump {
+  animation: bump 0.35s var(--spring);
+}
+
+@keyframes bump {
+  40% {
+    transform: scale(1.25);
+  }
+}
+
+#osd-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+#osd-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#osd-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-active);
+  overflow: hidden;
+}
+
+#osd-fill {
+  height: 100%;
+  width: calc(var(--v) * 100%);
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.25s var(--ease), background 0.3s;
+}
+
+#osd.over #osd-fill {
+  background: var(--warn);
+}
+
+#osd.muted #osd-fill {
+  background: var(--faint);
+}
+
+#osd.muted #osd-icon {
+  color: var(--danger);
+}
+
+#osd-value {
+  width: 40px;
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}

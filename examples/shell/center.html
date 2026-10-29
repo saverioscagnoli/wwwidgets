@@ -1,0 +1,150 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>shell center</title>
+    <link rel="stylesheet" href="shared.css" />
+    <link rel="stylesheet" href="center.css" />
+  </head>
+  <body>
+    <div id="backdrop"></div>
+    <aside id="panel">
+      <header id="head" class="block">
+        <span id="avatar" class="app-icon"></span>
+        <div class="who">
+          <span id="user"></span>
+          <span id="uptime"></span>
+        </div>
+        <button id="lock" class="round-btn" title="Lock"></button>
+        <button id="power" class="round-btn" title="Power"></button>
+      </header>
+
+      <div id="power-menu" class="collapse block">
+        <div>
+          <div class="power-grid">
+            <button class="power-btn" data-action="suspend"></button>
+            <button class="power-btn" data-action="logout"></button>
+            <button class="power-btn" data-action="reboot"></button>
+            <button class="power-btn danger" data-action="poweroff"></button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tiles" class="block">
+        <div class="tile" id="tile-wifi">
+          <button class="tile-main"><span class="tile-icon icon"></span><span class="tile-text"><b>Wi-Fi</b><small></small></span></button>
+          <button class="tile-more" title="Networks"></button>
+        </div>
+        <div class="tile" id="tile-bt">
+          <button class="tile-main"><span class="tile-icon icon"></span><span class="tile-text"><b>Bluetooth</b><small></small></span></button>
+          <button class="tile-more" title="Devices"></button>
+        </div>
+        <div class="tile" id="tile-dnd">
+          <button class="tile-main"><span class="tile-icon icon"></span><span class="tile-text"><b>Do not disturb</b><small></small></span></button>
+        </div>
+        <div class="tile" id="tile-mic">
+          <button class="tile-main"><span class="tile-icon icon"></span><span class="tile-text"><b>Microphone</b><small></small></span></button>
+        </div>
+      </div>
+
+      <div id="wifi-drawer" class="collapse block">
+        <div>
+          <div class="drawer card">
+            <header class="drawer-head"><b>Networks</b><span id="wifi-scan" class="icon"></span></header>
+            <div id="wifi-list" class="list"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="bt-drawer" class="collapse block">
+        <div>
+          <div class="drawer card">
+            <header class="drawer-head"><b>Devices</b><span id="bt-scan" class="icon"></span></header>
+            <div id="bt-request" class="request hidden"></div>
+            <div id="bt-list" class="list"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="sliders" class="card block">
+        <div class="slider-row" id="row-vol">
+          <button class="round-btn"></button>
+          <div class="slot"></div>
+          <span class="value"></span>
+          <button class="round-btn more" title="Sound settings"></button>
+        </div>
+        <div class="slider-row" id="row-mic">
+          <button class="round-btn"></button>
+          <div class="slot"></div>
+          <span class="value"></span>
+        </div>
+        <div class="slider-row hidden" id="row-bright">
+          <button class="round-btn"></button>
+          <div class="slot"></div>
+          <span class="value"></span>
+        </div>
+      </div>
+
+      <div id="mixer-drawer" class="collapse block">
+        <div>
+          <div class="drawer card">
+            <header class="drawer-head"><b>Output</b></header>
+            <div id="sinks" class="list"></div>
+            <header class="drawer-head"><b>Applications</b></header>
+            <div id="streams" class="list"></div>
+            <div id="streams-empty" class="muted-line">Nothing is playing</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="player" class="card block hidden">
+        <div id="art-bg"></div>
+        <div class="player-top">
+          <span id="art" class="art"></span>
+          <div class="player-meta">
+            <span id="p-title"></span>
+            <span id="p-artist"></span>
+            <span id="p-app"></span>
+          </div>
+        </div>
+        <div id="progress"><div id="progress-fill"></div></div>
+        <div class="player-bottom">
+          <span id="p-pos"></span>
+          <div class="controls">
+            <button id="p-prev" class="round-btn"></button>
+            <button id="p-play" class="round-btn play"></button>
+            <button id="p-next" class="round-btn"></button>
+          </div>
+          <span id="p-len"></span>
+        </div>
+        <div id="players"></div>
+      </div>
+
+      <div id="calendar" class="card block">
+        <header class="cal-head">
+          <div>
+            <b id="cal-day"></b>
+            <span id="cal-month"></span>
+          </div>
+          <div>
+            <button id="cal-prev" class="round-btn"></button>
+            <button id="cal-next" class="round-btn"></button>
+          </div>
+        </header>
+        <div id="cal-grid"></div>
+      </div>
+
+      <div id="notifications" class="card block">
+        <header class="notif-head">
+          <b>Notifications</b>
+          <button id="clear" class="pill-btn">Clear all</button>
+        </header>
+        <div id="notif-list"></div>
+        <div id="notif-empty" class="muted-line"></div>
+      </div>
+    </aside>
+
+    <script src="shared.js"></script>
+    <script src="center.js"></script>
+  </body>
+</html>

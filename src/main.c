@@ -373,7 +373,7 @@ static gchar *take_config_arg(int *argc, char **argv) {
     }
 
     memmove(&argv[1], &argv[i], (*argc - i + 1) * sizeof(char *));
-    *argc -= i = 1;
+    *argc -= i - 1;
 
     return path;
 }

@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>shell launcher</title>
+    <link rel="stylesheet" href="shared.css" />
+    <link rel="stylesheet" href="launcher.css" />
+  </head>
+  <body>
+    <div id="backdrop"></div>
+    <div id="box">
+      <label id="search">
+        <span id="mode" class="icon"></span>
+        <input id="query" placeholder="Search apps and windows…" spellcheck="false" autocomplete="off" />
+        <kbd>esc</kbd>
+      </label>
+      <div id="results"></div>
+      <div id="empty" class="hidden">Nothing found</div>
+      <footer id="hints">
+        <span><b>=</b> calculate</span>
+        <span><b>&gt;</b> run command</span>
+        <span><b>:</b> clipboard</span>
+        <span class="spacer"></span>
+        <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+        <span><kbd>↵</kbd> open</span>
+      </footer>
+    </div>
+
+    <script src="shared.js"></script>
+    <script src="launcher.js"></script>
+  </body>
+</html>

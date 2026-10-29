@@ -1,0 +1,154 @@
+#stack {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: calc(100% - 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 20px;
+}
+
+.toast {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.5s var(--spring), opacity 0.3s var(--ease), max-height 0.4s var(--ease), padding 0.4s var(--ease), margin 0.4s var(--ease), border-color 0.2s;
+}
+
+.toast:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.toast.entering {
+  opacity: 0;
+  transform: translateX(110%) scale(0.9);
+}
+
+.toast.leaving {
+  opacity: 0;
+  transform: translateX(110%);
+  max-height: 0 !important;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin-bottom: -8px;
+  transition: transform 0.35s var(--ease), opacity 0.3s var(--ease), max-height 0.35s 0.15s var(--ease), padding 0.35s 0.15s var(--ease), margin 0.35s 0.15s var(--ease);
+}
+
+.toast.critical {
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+}
+
+.toast.critical::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--danger);
+}
+
+.toast::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.09) 50%, transparent 70%);
+  transform: translateX(-100%);
+  pointer-events: none;
+}
+
+.toast.shine::after {
+  animation: shine 1.1s 0.25s var(--ease);
+}
+
+@keyframes shine {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.toast .app-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+
+.toast-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toast-top {
+  display: flex;
+  justify-content: space-between;
+  padding-right: 22px;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.toast-summary {
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toast-text {
+  color: var(--muted);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+
+.toast-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.toast-actions .pill-btn {
+  flex: 1;
+  height: 30px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface-hover);
+}
+
+.toast-actions .pill-btn:hover {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.toast .close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  opacity: 0;
+  transform: scale(0.6) rotate(-90deg);
+  transition: opacity 0.2s, transform 0.3s var(--spring), background 0.2s;
+}
+
+.toast:hover .close {
+  opacity: 1;
+  transform: none;
+}
+
+.toast .close .icon {
+  width: 14px;
+  height: 14px;
+}

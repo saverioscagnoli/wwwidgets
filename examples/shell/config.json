@@ -1,0 +1,59 @@
+{
+  "hot-reload": true,
+  "devtools": true,
+  "workspaces": true,
+  "notifications": true,
+  "tray": true,
+  "audio": true,
+  "bluetooth": true,
+  "network": true,
+  "battery": true,
+  "brightness": true,
+  "exec": true,
+  "toplevels": true,
+  "clipboard": true,
+  "media": true,
+  "widgets": [
+    {
+      "path": "bar.html",
+      "namespace": "shell-bar",
+      "anchor": "top-left-right",
+      "height": 44,
+      "exclusive": true
+    },
+    {
+      "path": "toasts.html",
+      "namespace": "shell-toasts",
+      "anchor": "top-right",
+      "width": 400,
+      "height": 640,
+      "margin": { "top": 4, "right": 4 },
+      "layer": "overlay"
+    },
+    {
+      "path": "osd.html",
+      "namespace": "shell-osd",
+      "anchor": "bottom",
+      "width": 340,
+      "height": 120,
+      "margin": { "bottom": 40 },
+      "layer": "overlay"
+    },
+    {
+      "path": "center.html",
+      "namespace": "shell-center",
+      "anchor": "fill",
+      "layer": "overlay",
+      "keyboard": "on-demand",
+      "visible-when": "shell.center.{monitor}"
+    },
+    {
+      "path": "launcher.html",
+      "namespace": "shell-launcher",
+      "anchor": "fill",
+      "layer": "overlay",
+      "keyboard": "exclusive",
+      "visible-when": "shell.launcher.{monitor}"
+    }
+  ]
+}

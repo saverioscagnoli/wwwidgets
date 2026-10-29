@@ -246,6 +246,7 @@ gboolean window_set_input_region(GtkWindow *window, const gchar *json) {
 
     if (JSON_NODE_HOLDS_NULL(node)) {
         gdk_surface_set_input_region(surface, NULL);
+        gtk_widget_queue_draw(GTK_WIDGET(window));
         return TRUE;
     }
 
@@ -275,6 +276,8 @@ gboolean window_set_input_region(GtkWindow *window, const gchar *json) {
 
     gdk_surface_set_input_region(surface, region);
     cairo_region_destroy(region);
+    // the input region is only sent on the next commit, force one
+    gtk_widget_queue_draw(GTK_WIDGET(window));
     return TRUE;
 }
 

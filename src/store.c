@@ -53,6 +53,9 @@ void store_apply_visibility(AppState *state, GtkWindow *window) {
         gdk_surface_set_input_region(surface, empty);
         cairo_region_destroy(empty);
     }
+
+    // the input region is only sent on the next commit, force one
+    gtk_widget_queue_draw(GTK_WIDGET(window));
 }
 
 static void store_changed(AppState *state, const gchar *key, JsonNode *value) {

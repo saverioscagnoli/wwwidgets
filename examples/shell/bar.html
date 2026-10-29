@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>shell bar</title>
+    <link rel="stylesheet" href="shared.css" />
+    <link rel="stylesheet" href="bar.css" />
+  </head>
+  <body>
+    <div id="bar">
+      <section class="side left">
+        <button id="logo" class="chip" title="Applications"></button>
+        <div id="workspaces" class="chip"></div>
+        <div id="tasks"></div>
+        <span id="title"></span>
+      </section>
+
+      <section class="middle">
+        <button id="clock" class="chip">
+          <span id="time"></span>
+          <span id="date"></span>
+        </button>
+        <button id="media" class="chip hidden">
+          <span class="eq"><i></i><i></i><i></i><i></i></span>
+          <span id="media-text"></span>
+        </button>
+      </section>
+
+      <section class="side right">
+        <div id="tray"></div>
+        <button id="status" class="chip">
+          <span id="st-net" class="icon"></span>
+          <span id="st-bt" class="icon hidden"></span>
+          <span id="st-vol" class="icon"></span>
+          <span id="st-bat" class="battery hidden">
+            <span class="icon"></span>
+            <span class="battery-text"></span>
+          </span>
+        </button>
+        <button id="bell" class="chip">
+          <span class="icon"></span>
+          <span id="badge"></span>
+        </button>
+      </section>
+    </div>
+
+    <script src="shared.js"></script>
+    <script src="bar.js"></script>
+  </body>
+</html>

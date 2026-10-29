@@ -1,0 +1,30 @@
+{
+  "devtools": true,
+  "hot-reload": true,
+  "workspaces": true,
+  "notifications": true,
+  "tray": true,
+  "audio": true,
+  "bluetooth": true,
+  "network": true,
+  "battery": true,
+  "brightness": true,
+  "exec": true,
+  "toplevels": true,
+  "clipboard": true,
+  "media": true,
+  "widgets": [
+    { "namespace": "complex-zone", "anchor": "top-bottom-left", "width": 1, "exclusive": 48 },
+    { "namespace": "complex-zone", "anchor": "top-left-right", "height": 1, "exclusive": 10 },
+    { "namespace": "complex-zone", "anchor": "top-bottom-right", "width": 1, "exclusive": 10 },
+    { "namespace": "complex-zone", "anchor": "bottom-left-right", "height": 1, "exclusive": 10 },
+    {
+      "path": "dist/index.html",
+      "namespace": "complex-shell",
+      "anchor": "fill",
+      "layer": "top",
+      "exclusive": -1,
+      "keyboard": "none"
+    }
+  ]
+}
